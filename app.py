@@ -1,17 +1,16 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import random
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.patches import Rectangle, FancyBboxPatch
+import math
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Gestion d'Entrepôt ISO 50001 & 90001",
-    page_icon="🏭",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Dimensionnement d'Entrepôt",
+    page_icon="📐",
+    layout="wide"
 )
 
 # Style CSS personnalisé
@@ -22,738 +21,451 @@ st.markdown("""
         color: #2c3e50;
         text-align: center;
         padding: 1rem;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(90deg, #3498db 0%, #2980b9 100%);
         color: white;
         border-radius: 10px;
         margin-bottom: 2rem;
     }
     .metric-card {
-        background-color: white;
+        background-color: #f8f9fa;
         padding: 1rem;
         border-radius: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         text-align: center;
     }
-    .iso-badge {
-        background-color: #27ae60;
-        color: white;
-        padding: 0.5rem;
-        border-radius: 5px;
-        text-align: center;
-        font-weight: bold;
-    }
-    .warning-badge {
-        background-color: #f39c12;
-        color: white;
-        padding: 0.3rem;
-        border-radius: 3px;
+    .result-card {
+        background-color: #d4edda;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #28a745;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Initialisation des données dans session state
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = True
-    
-    # Données de stock
-    st.session_state.stock_data = pd.DataFrame({
-        'ID': [f'PRD00{i}' for i in range(1, 11)],
-        'Produit': [f'Produit {chr(65+i)}' for i in range(10)],
-        'Catégorie': ['Électronique', 'Mécanique', 'Emballage', 'Électronique', 'Mécanique', 
-                      'Emballage', 'Électronique', 'Mécanique', 'Emballage', 'Électronique'],
-        'Quantité': [150, 45, 200, 80, 320, 65, 180, 95, 430, 120],
-        'Seuil_min': [50, 60, 100, 50, 150, 50, 80, 70, 200, 60],
-        'Seuil_max': [300, 200, 500, 250, 600, 300, 400, 250, 800, 300],
-        'Emplacement': ['A1', 'B2', 'C3', 'A4', 'B5', 'C6', 'A7', 'B8', 'C9', 'A10'],
-        'Fournisseur': ['Fourn A', 'Fourn B', 'Fourn C', 'Fourn A', 'Fourn D', 
-                        'Fourn C', 'Fourn E', 'Fourn B', 'Fourn F', 'Fourn A'],
-        'Date_derniere_entree': pd.date_range(start='2024-01-01', periods=10, freq='D')
-    })
-    
-    # Données de consommation énergétique
-    dates = pd.date_range(start='2024-01-01', end='2024-03-31', freq='D')
-    st.session_state.energie_data = pd.DataFrame({
-        'Date': dates,
-        'Consommation_kWh': [random.randint(350, 550) for _ in range(len(dates))],
-        'Zone': [random.choice(['Réception', 'Stockage', 'Expédition', 'Bureaux']) for _ in range(len(dates))],
-        'Temperature_ext': [random.randint(5, 25) for _ in range(len(dates))]
-    })
-    
-    # Données qualité
-    st.session_state.qualite_data = pd.DataFrame({
-        'Date': pd.date_range(start='2024-01-01', end='2024-03-31', freq='W'),
-        'Taux_conformite': [random.uniform(92, 99) for _ in range(13)],
-        'Non_conformites': [random.randint(0, 5) for _ in range(13)],
-        'Audit_score': [random.uniform(85, 100) for _ in range(13)]
-    })
-
-# En-tête principal
-st.markdown('<h1 class="main-header">🏭 GESTION D\'ENTREPÔT INTELLIGENTE</h1>', 
-            unsafe_allow_html=True)
-st.markdown('<p class="iso-badge">✓ Certifié ISO 50001 (Management de l\'énergie) & ISO 90001 (Management de la qualité)</p>', 
+# Titre principal
+st.markdown('<h1 class="main-header">📐 DIMENSIONNEMENT AUTOMATIQUE D\'ENTREPÔT</h1>', 
             unsafe_allow_html=True)
 
-# Sidebar pour la navigation
-st.sidebar.image("https://via.placeholder.com/300x100/2c3e50/ffffff?text=ENTREPOT+ISO", use_column_width=True)
-st.sidebar.title("📱 Navigation")
+# Initialisation des paramètres dans session state
+if 'params' not in st.session_state:
+    st.session_state.params = {
+        'longueur': 50.0,
+        'largeur': 30.0,
+        'hauteur': 8.0,
+        'type_palette': 'Europe (800x1200)',
+        'type_rayonnage': 'Classique',
+        'largeur_allee': 3.0,
+        'nb_niveaux': 3,
+        'profondeur_double': False,
+        'zone_securite': 10
+    }
 
-menu = st.sidebar.radio(
-    "Menu principal",
-    ["🏠 Tableau de bord",
-     "📦 Gestion de stock",
-     "📐 Dimensionnement",
-     "⚡ ISO 50001 - Énergie",
-     "✅ ISO 90001 - Qualité",
-     "📊 Rapports & Analyses",
-     "⚙️ Paramètres"]
+# Sidebar pour les paramètres d'entrée
+st.sidebar.image("https://via.placeholder.com/300x100/3498db/ffffff?text=DIMENSIONNEMENT", use_column_width=True)
+st.sidebar.title("📏 Paramètres d'entrée")
+
+# Dimensions de l'entrepôt
+st.sidebar.subheader("🏢 Dimensions de l'entrepôt")
+longueur = st.sidebar.number_input("Longueur (m)", min_value=5.0, max_value=200.0, value=50.0, step=1.0)
+largeur = st.sidebar.number_input("Largeur (m)", min_value=5.0, max_value=100.0, value=30.0, step=1.0)
+hauteur = st.sidebar.number_input("Hauteur sous plafond (m)", min_value=3.0, max_value=20.0, value=8.0, step=0.5)
+
+# Type de palette
+st.sidebar.subheader("📦 Type de palette")
+type_palette = st.sidebar.selectbox(
+    "Dimensions palette",
+    ["Europe (800x1200)", "Industrielle (1000x1200)", "Américaine (1200x1200)", "Demi-palette (600x800)", "Personnalisée"]
 )
 
-# Informations système dans la sidebar
-st.sidebar.markdown("---")
-st.sidebar.markdown("### ℹ️ Informations")
-st.sidebar.info(f"📅 Dernière mise à jour: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-st.sidebar.success("🟢 Système opérationnel")
-st.sidebar.warning(f"📦 Alertes stock: {len(st.session_state.stock_data[st.session_state.stock_data['Quantité'] < st.session_state.stock_data['Seuil_min']])}")
+if type_palette == "Personnalisée":
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        palette_longueur = st.number_input("Longueur palette (mm)", min_value=400, max_value=2000, value=800, step=50)
+    with col2:
+        palette_largeur = st.number_input("Largeur palette (mm)", min_value=400, max_value=2000, value=1200, step=50)
+else:
+    # Dimensions standards
+    dimensions_palette = {
+        "Europe (800x1200)": (800, 1200),
+        "Industrielle (1000x1200)": (1000, 1200),
+        "Américaine (1200x1200)": (1200, 1200),
+        "Demi-palette (600x800)": (600, 800)
+    }
+    palette_longueur, palette_largeur = dimensions_palette[type_palette]
 
-# ==================== TABLEAU DE BORD ====================
-if menu == "🏠 Tableau de bord":
-    st.header("📊 Tableau de bord - Vue d'ensemble")
+# Type de rayonnage
+st.sidebar.subheader("🏗️ Type de rayonnage")
+type_rayonnage = st.sidebar.selectbox(
+    "Configuration",
+    ["Classique", "Navette", "Mobile", "Cantilever", "Drive-in"]
+)
+
+# Configuration des allées
+st.sidebar.subheader("🚶 Configuration des allées")
+type_allee = st.sidebar.selectbox(
+    "Type d'allée",
+    ["Simple (chariot manuel)", "Double (chariot élévateur)", "Large (tracteur)", "Très large (semi-remorque)"]
+)
+
+largeurs_allee = {
+    "Simple (chariot manuel)": 1.8,
+    "Double (chariot élévateur)": 3.0,
+    "Large (tracteur)": 3.5,
+    "Très large (semi-remorque)": 4.5
+}
+largeur_allee = st.sidebar.slider(
+    "Largeur d'allée (m)", 
+    min_value=1.5, 
+    max_value=6.0, 
+    value=largeurs_allee[type_allee],
+    step=0.1
+)
+
+# Configuration des rayonnages
+st.sidebar.subheader("📊 Configuration des rayonnages")
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    nb_niveaux = st.number_input("Nombre de niveaux", min_value=1, max_value=10, value=3)
+with col2:
+    profondeur_double = st.checkbox("Double profondeur", value=False)
+
+zone_securite = st.sidebar.slider("Zone de sécurité (%)", min_value=5, max_value=20, value=10)
+
+# Bouton de calcul
+calculer = st.sidebar.button("🚀 Lancer le dimensionnement", use_container_width=True)
+
+# ==================== FONCTIONS DE CALCUL ====================
+
+def calculer_dimensions_rayonnage(palette_longueur, palette_largeur, nb_niveaux, profondeur_double):
+    """Calcule les dimensions d'un rayonnage"""
+    # Conversion mm -> m
+    pal_l = palette_longueur / 1000
+    pal_L = palette_largeur / 1000
     
-    # KPIs principaux
-    col1, col2, col3, col4 = st.columns(4)
+    # Épaisseur des montants (m)
+    epaisseur_montant = 0.1
     
-    with col1:
-        with st.container():
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("📦 Stock total", f"{st.session_state.stock_data['Quantité'].sum():,} unités", 
-                     f"+{random.randint(1,5)}%")
-            st.markdown('</div>', unsafe_allow_html=True)
+    # Hauteur du rayonnage
+    hauteur_rayonnage = nb_niveaux * (pal_L + 0.15) + 0.2  # 15cm d'espace par niveau + 20cm de base
     
-    with col2:
-        with st.container():
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("⚡ Conso. énergie", f"{st.session_state.energie_data['Consommation_kWh'].mean():.0f} kWh/jour",
-                     f"{random.randint(-3,3)}%")
-            st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col3:
-        with st.container():
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("✅ Taux qualité", f"{st.session_state.qualite_data['Taux_conformite'].mean():.1f}%",
-                     f"+{random.randint(0,2)}%")
-            st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col4:
-        with st.container():
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("📐 Occupation", f"{random.randint(75, 90)}%",
-                     f"{random.randint(-2,5)}%")
-            st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Graphiques
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📈 Évolution du stock par catégorie")
-        stock_cat = st.session_state.stock_data.groupby('Catégorie')['Quantité'].sum().reset_index()
-        fig = px.pie(stock_cat, values='Quantité', names='Catégorie', 
-                     title="Répartition du stock", hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("⚡ Consommation énergétique")
-        conso_hebdo = st.session_state.energie_data.resample('W', on='Date')['Consommation_kWh'].mean().reset_index()
-        fig = px.line(conso_hebdo, x='Date', y='Consommation_kWh', 
-                     title="Consommation moyenne hebdomadaire")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Alertes
-    st.markdown("---")
-    st.subheader("🔔 Alertes et notifications")
-    
-    alerts = []
-    
-    # Alertes stock
-    stock_faible = st.session_state.stock_data[st.session_state.stock_data['Quantité'] < st.session_state.stock_data['Seuil_min']]
-    for _, row in stock_faible.iterrows():
-        alerts.append(("⚠️", f"Stock faible: {row['Produit']} ({row['Quantité']} unités)"))
-    
-    # Alertes ISO
-    if st.session_state.qualite_data['Taux_conformite'].iloc[-1] < 95:
-        alerts.append(("⚠️", "Taux de conformité sous l'objectif ISO 90001"))
-    
-    if st.session_state.energie_data['Consommation_kWh'].iloc[-5:].mean() > 500:
-        alerts.append(("⚠️", "Consommation énergétique anormalement élevée"))
-    
-    if not alerts:
-        st.success("✅ Aucune alerte - Tous les indicateurs sont verts")
+    # Profondeur du rayonnage
+    if profondeur_double:
+        profondeur_rayonnage = (pal_l * 2) + 0.3  # Double profondeur + espace
     else:
-        for icon, msg in alerts[:5]:
-            st.warning(f"{icon} {msg}")
+        profondeur_rayonnage = pal_l + 0.15  # Simple profondeur
+    
+    # Longueur d'un alvéole
+    longueur_alveole = pal_L + 0.1  # 10cm d'espace
+    
+    return {
+        'hauteur': hauteur_rayonnage,
+        'profondeur': profondeur_rayonnage,
+        'longueur_alveole': longueur_alveole,
+        'pal_l': pal_l,
+        'pal_L': pal_L
+    }
 
-# ==================== GESTION DE STOCK ====================
-elif menu == "📦 Gestion de stock":
-    st.header("📦 Gestion de stock")
+def calculer_capacite(longueur, largeur, hauteur, largeur_allee, dimensions_ray, zone_securite):
+    """Calcule la capacité de stockage"""
     
-    # Onglets
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 État du stock", "➕ Ajouter/Modifier", "📦 Mouvements", "📊 Analyse stock"])
+    # Surface utile (enlevant zone de sécurité)
+    surface_totale = longueur * largeur
+    surface_utile = surface_totale * (1 - zone_securite/100)
     
-    with tab1:
-        st.subheader("État actuel du stock")
-        
-        # Filtres
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            categorie_filter = st.selectbox("Filtrer par catégorie", 
-                                           ["Toutes"] + list(st.session_state.stock_data['Catégorie'].unique()))
-        with col2:
-            seuil_filter = st.slider("Seuil d'alerte", 0, 500, 100)
-        with col3:
-            search = st.text_input("🔍 Rechercher un produit")
-        
-        # Application des filtres
-        df_filtered = st.session_state.stock_data.copy()
-        if categorie_filter != "Toutes":
-            df_filtered = df_filtered[df_filtered['Catégorie'] == categorie_filter]
-        if search:
-            df_filtered = df_filtered[df_filtered['Produit'].str.contains(search, case=False)]
-        
-        # Coloration conditionnelle
-        def color_stock(val):
-            if val < 60:
-                return 'background-color: #ffcccc'
-            elif val > 300:
-                return 'background-color: #ccffcc'
-            return ''
-        
-        styled_df = df_filtered.style.applymap(color_stock, subset=['Quantité'])
-        st.dataframe(styled_df, use_container_width=True)
-        
-        # Statistiques
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Nombre de références", len(df_filtered))
-        col2.metric("Valeur totale du stock", f"{df_filtered['Quantité'].sum() * random.randint(10,50):,} €")
-        col3.metric("Taux de rotation", f"{random.randint(60, 95)}%")
+    # Organisation des allées
+    nb_rangees_longueur = math.floor((longueur - largeur_allee) / (dimensions_ray['profondeur'] + largeur_allee/2))
+    nb_rangees_largeur = math.floor((largeur - largeur_allee) / (dimensions_ray['profondeur'] + largeur_allee/2))
     
-    with tab2:
-        st.subheader("Ajouter un nouveau produit")
-        
-        with st.form("ajout_produit"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                nom = st.text_input("Nom du produit")
-                categorie = st.selectbox("Catégorie", ["Électronique", "Mécanique", "Emballage", "Autre"])
-                quantite = st.number_input("Quantité", min_value=0, value=100)
-                
-            with col2:
-                seuil_min = st.number_input("Seuil minimum", min_value=0, value=50)
-                seuil_max = st.number_input("Seuil maximum", min_value=0, value=500)
-                emplacement = st.text_input("Emplacement", value="A1")
-            
-            submitted = st.form_submit_button("Ajouter au stock")
-            
-            if submitted and nom:
-                new_id = f"PRD{len(st.session_state.stock_data)+1:03d}"
-                new_row = pd.DataFrame({
-                    'ID': [new_id],
-                    'Produit': [nom],
-                    'Catégorie': [categorie],
-                    'Quantité': [quantite],
-                    'Seuil_min': [seuil_min],
-                    'Seuil_max': [seuil_max],
-                    'Emplacement': [emplacement],
-                    'Fournisseur': ['Nouveau fournisseur'],
-                    'Date_derniere_entree': [datetime.now()]
-                })
-                st.session_state.stock_data = pd.concat([st.session_state.stock_data, new_row], ignore_index=True)
-                st.success(f"✅ Produit {nom} ajouté avec succès!")
+    # Nombre d'alvéoles par rangée
+    nb_alveoles_par_rangee = math.floor(longueur / dimensions_ray['longueur_alveole'])
     
-    with tab3:
-        st.subheader("Historique des mouvements")
-        
-        # Simulation de mouvements
-        mouvements = pd.DataFrame({
-            'Date': pd.date_range(start='2024-03-01', periods=20, freq='D'),
-            'Produit': np.random.choice(st.session_state.stock_data['Produit'], 20),
-            'Type': np.random.choice(['Entrée', 'Sortie', 'Transfert'], 20),
-            'Quantité': np.random.randint(1, 50, 20),
-            'Responsable': np.random.choice(['Dupont', 'Martin', 'Bernard', 'Petit'], 20)
-        })
-        
-        st.dataframe(mouvements, use_container_width=True)
-        
-        # Graphique des mouvements
-        mouvements_count = mouvements['Type'].value_counts()
-        fig = px.bar(x=mouvements_count.index, y=mouvements_count.values, 
-                     title="Répartition des mouvements")
-        st.plotly_chart(fig, use_container_width=True)
+    # Calculs
+    nb_total_rangees = nb_rangees_longueur + nb_rangees_largeur
+    nb_total_alveoles = nb_total_rangees * nb_alveoles_par_rangee
+    capacite_totale = nb_total_alveoles * nb_niveaux
+    
+    return {
+        'surface_totale': surface_totale,
+        'surface_utile': surface_utile,
+        'nb_rangees': nb_total_rangees,
+        'nb_alveoles_par_rangee': nb_alveoles_par_rangee,
+        'capacite': capacite_totale,
+        'nb_rangees_longueur': nb_rangees_longueur,
+        'nb_rangees_largeur': nb_rangees_largeur
+    }
 
-# ==================== DIMENSIONNEMENT ====================
-elif menu == "📐 Dimensionnement":
-    st.header("📐 Dimensionnement et optimisation d'entrepôt")
+def generer_plan_2d(longueur, largeur, largeur_allee, dimensions_ray, calculs):
+    """Génère un plan 2D de l'entrepôt"""
     
-    # Onglets
-    tab1, tab2, tab3 = st.tabs(["📏 Calcul capacité", "📊 Optimisation espace", "🔄 Simulation flux"])
+    fig, ax = plt.subplots(1, 1, figsize=(14, 10))
     
-    with tab1:
-        st.subheader("Calcul de la capacité de stockage")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            longueur = st.number_input("Longueur de l'entrepôt (m)", min_value=10, max_value=200, value=80)
-            largeur = st.number_input("Largeur de l'entrepôt (m)", min_value=10, max_value=100, value=40)
-            hauteur = st.number_input("Hauteur sous plafond (m)", min_value=3, max_value=20, value=8)
-            
-        with col2:
-            type_produit = st.selectbox("Type de produits", 
-                                       ["Palettes", "Bacs", "Vrac", "Rayonnage léger"])
-            densite = st.slider("Densité de stockage (%)", 50, 95, 75)
-            hauteur_moy_produit = st.number_input("Hauteur moyenne produit (m)", 0.1, 5.0, 1.5)
-        
-        # Calculs
-        surface_totale = longueur * largeur
-        volume_total = surface_totale * hauteur
-        nb_niveaux = int(hauteur / hauteur_moy_produit)
-        capacite_theorique = (surface_totale * nb_niveaux) * (densite / 100)
-        
-        # Affichage résultats
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Surface totale", f"{surface_totale:,.0f} m²")
-        col2.metric("Volume total", f"{volume_total:,.0f} m³")
-        col3.metric("Niveaux possibles", nb_niveaux)
-        col4.metric("Capacité théorique", f"{capacite_theorique:,.0f} unités")
-        
-        # Visualisation 3D simplifiée
-        fig = go.Figure()
-        
-        # Création d'un cube 3D
-        x = [0, longueur, longueur, 0, 0, longueur, longueur, 0]
-        y = [0, 0, largeur, largeur, 0, 0, largeur, largeur]
-        z = [0, 0, 0, 0, hauteur, hauteur, hauteur, hauteur]
-        
-        fig.add_trace(go.Mesh3d(
-            x=x, y=y, z=z,
-            color='lightblue',
-            opacity=0.5,
-            name='Entrepôt'
-        ))
-        
-        fig.update_layout(
-            title="Visualisation 3D de l'entrepôt",
-            scene=dict(
-                xaxis_title="Longueur (m)",
-                yaxis_title="Largeur (m)",
-                zaxis_title="Hauteur (m)"
-            ),
-            width=800,
-            height=500
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+    # Dessiner le contour de l'entrepôt
+    entrepot = Rectangle((0, 0), longueur, largeur, linewidth=3, 
+                        edgecolor='black', facecolor='none', alpha=1)
+    ax.add_patch(entrepot)
     
-    with tab2:
-        st.subheader("Optimisation de l'espace")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            type_rayonnage = st.selectbox("Type de rayonnage", 
-                                         ["Classique", "Navette", "Mobile", "Cantilever"])
-            largeur_allee = st.number_input("Largeur des allées (m)", 0.8, 5.0, 3.0)
-            profondeur_rayonnage = st.number_input("Profondeur rayonnage (m)", 0.5, 2.0, 1.2)
-            
-        with col2:
-            nb_allées = st.number_input("Nombre d'allées", 1, 20, 5)
-            hauteur_rayonnage = st.number_input("Hauteur rayonnage (m)", 2.0, 15.0, 6.0)
-            espace_securite = st.number_input("Espace de sécurité (%)", 5, 30, 15)
-        
-        if st.button("Calculer l'optimisation", use_container_width=True):
-            surface_utile = surface_totale * (1 - espace_securite/100)
-            surface_rayonnage = (largeur_allee + profondeur_rayonnage * 2) * longueur * nb_allées
-            capacite_optimisee = (surface_utile / surface_rayonnage) * 1000
-            
-            st.success("✅ Analyse d'optimisation terminée!")
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Surface utile", f"{surface_utile:,.0f} m²")
-            col2.metric("Gain potentiel", f"{random.randint(15, 30)}%")
-            col3.metric("Capacité optimisée", f"{capacite_optimisee:,.0f} unités")
+    # Couleurs pour les différents éléments
+    couleur_allee = '#d3d3d3'  # Gris clair
+    couleur_rayonnage = '#87CEEB'  # Bleu ciel
+    couleur_rayonnage_fonce = '#4682B4'  # Bleu acier
     
-    with tab3:
-        st.subheader("Simulation des flux")
+    # Dessiner les allées principales
+    # Allée centrale longitudinale
+    ax.add_patch(Rectangle((longueur/2 - largeur_allee/2, 0), 
+                           largeur_allee, largeur, 
+                           facecolor=couleur_allee, alpha=0.3, edgecolor='gray', linewidth=1))
+    
+    # Allée transversale
+    ax.add_patch(Rectangle((0, largeur/2 - largeur_allee/2), 
+                           longueur, largeur_allee, 
+                           facecolor=couleur_allee, alpha=0.3, edgecolor='gray', linewidth=1))
+    
+    # Dessiner les rayonnages
+    # Rayonnages sur la longueur
+    for i in range(calculs['nb_rangees_longueur']):
+        x = (i * (dimensions_ray['profondeur'] + largeur_allee/2)) + 1
+        y = 2
+        # Rayonnage de gauche
+        ax.add_patch(Rectangle((x, y), 
+                               dimensions_ray['profondeur'], 
+                               largeur/2 - largeur_allee/2 - 4,
+                               facecolor=couleur_rayonnage, edgecolor='blue', alpha=0.7))
+        # Ajouter des lignes pour représenter les alvéoles
+        for j in range(0, int(largeur/2 - largeur_allee/2 - 4), 
+                      int(dimensions_ray['longueur_alveole']*2)):
+            ax.axhline(y=y+j, xmin=x/longueur, 
+                      xmax=(x+dimensions_ray['profondeur'])/longueur, 
+                      color='white', linewidth=0.5)
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            entrees_jour = st.number_input("Entrées par jour", 0, 1000, 150)
-            sorties_jour = st.number_input("Sorties par jour", 0, 1000, 120)
-            temps_preparation = st.number_input("Temps préparation (min)", 5, 120, 15)
-            
-        with col2:
-            nb_operateurs = st.number_input("Nombre d'opérateurs", 1, 50, 8)
-            nb_quais = st.number_input("Nombre de quais", 1, 20, 4)
-            heures_ouverture = st.number_input("Heures d'ouverture/jour", 8, 24, 10)
-        
-        if st.button("Lancer la simulation", use_container_width=True):
-            capacite_horaire = nb_operateurs * (60 / temps_preparation)
-            capacite_jour = capacite_horaire * heures_ouverture
-            taux_occupation = ((entrees_jour + sorties_jour) / capacite_jour) * 100
-            
-            # Graphique de simulation
-            heures = list(range(heures_ouverture))
-            flux_horaire = [random.randint(10, 30) for _ in heures]
-            
-            fig = px.bar(x=heures, y=flux_horaire, 
-                        title="Simulation du flux horaire",
-                        labels={'x': 'Heure', 'y': 'Nombre d\'opérations'})
-            st.plotly_chart(fig, use_container_width=True)
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Capacité journalière", f"{capacite_jour:.0f} opérations")
-            col2.metric("Taux d'occupation", f"{taux_occupation:.1f}%")
-            col3.metric("Temps d'attente moyen", f"{random.randint(5, 30)} min")
+        # Rayonnage de droite
+        ax.add_patch(Rectangle((x, largeur/2 + largeur_allee/2 + 2), 
+                               dimensions_ray['profondeur'], 
+                               largeur/2 - largeur_allee/2 - 4,
+                               facecolor=couleur_rayonnage_fonce, edgecolor='darkblue', alpha=0.7))
+    
+    # Rayonnages sur la largeur
+    for i in range(calculs['nb_rangees_largeur']):
+        y = (i * (dimensions_ray['profondeur'] + largeur_allee/2)) + 1
+        x = 2
+        # Rayonnage du bas
+        ax.add_patch(Rectangle((x, y), 
+                               longueur/2 - largeur_allee/2 - 4, 
+                               dimensions_ray['profondeur'],
+                               facecolor=couleur_rayonnage, edgecolor='blue', alpha=0.7))
+        # Rayonnage du haut
+        ax.add_patch(Rectangle((longueur/2 + largeur_allee/2 + 2, y), 
+                               longueur/2 - largeur_allee/2 - 4, 
+                               dimensions_ray['profondeur'],
+                               facecolor=couleur_rayonnage_fonce, edgecolor='darkblue', alpha=0.7))
+    
+    # Ajouter des étiquettes pour les zones
+    ax.text(2, largeur-2, 'Zone A', fontsize=12, fontweight='bold', color='darkblue')
+    ax.text(longueur-10, largeur-2, 'Zone B', fontsize=12, fontweight='bold', color='darkblue')
+    ax.text(2, 2, 'Zone C', fontsize=12, fontweight='bold', color='darkblue')
+    ax.text(longueur-10, 2, 'Zone D', fontsize=12, fontweight='bold', color='darkblue')
+    
+    # Légende
+    legend_elements = [
+        Rectangle((0, 0), 1, 1, facecolor=couleur_allee, alpha=0.3, label='Allées'),
+        Rectangle((0, 0), 1, 1, facecolor=couleur_rayonnage, label='Rayonnages'),
+        Rectangle((0, 0), 1, 1, facecolor='white', edgecolor='black', label='Contour entrepôt')
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.15, 1))
+    
+    # Configuration du graphique
+    ax.set_xlim(-2, longueur + 2)
+    ax.set_ylim(-2, largeur + 2)
+    ax.set_aspect('equal')
+    ax.set_xlabel('Longueur (m)', fontsize=12)
+    ax.set_ylabel('Largeur (m)', fontsize=12)
+    ax.set_title('📐 Plan 2D de l\'entrepôt - Vue de dessus', fontsize=16, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    # Ajouter une échelle
+    ax.plot([longueur-20, longueur-10], [largeur+1, largeur+1], 'k-', linewidth=3)
+    ax.text(longueur-15, largeur+1.5, '10 m', ha='center')
+    
+    return fig
 
-# ==================== ISO 50001 - ÉNERGIE ====================
-elif menu == "⚡ ISO 50001 - Énergie":
-    st.header("⚡ ISO 50001 - Management de l'énergie")
-    
-    # Badge de conformité
-    st.markdown('<p class="iso-badge">✓ Conforme ISO 50001:2018</p>', unsafe_allow_html=True)
-    
-    # Onglets
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Performance énergétique", "📈 Indicateurs", "🔧 Actions", "📋 Audits"])
-    
-    with tab1:
-        st.subheader("Performance énergétique")
-        
-        # Graphique consommation
-        fig = px.line(st.session_state.energie_data, x='Date', y='Consommation_kWh',
-                     title="Consommation énergétique quotidienne")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Métriques par zone
-        conso_zone = st.session_state.energie_data.groupby('Zone')['Consommation_kWh'].mean().reset_index()
-        fig = px.bar(conso_zone, x='Zone', y='Consommation_kWh',
-                    title="Consommation moyenne par zone")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # KPIs énergétiques
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Consommation totale", f"{st.session_state.energie_data['Consommation_kWh'].sum():,.0f} kWh")
-        col2.metric("Moyenne journalière", f"{st.session_state.energie_data['Consommation_kWh'].mean():.0f} kWh")
-        col3.metric("Pic de consommation", f"{st.session_state.energie_data['Consommation_kWh'].max():.0f} kWh")
-        col4.metric("Objectif 2024", "-8%", "-2%")
-    
-    with tab2:
-        st.subheader("Indicateurs de performance énergétique (IPÉ)")
-        
-        # Calcul des indicateurs
-        indicateurs = pd.DataFrame({
-            'Indicateur': ['Intensité énergétique', 'Facteur de charge', 'Efficacité éclairage', 
-                          'COP CVC', 'Ratio stock/énergie'],
-            'Valeur': ['85 kWh/m²', '0.75', '92%', '3.2', '15.4 unités/kWh'],
-            'Cible': ['80 kWh/m²', '0.80', '90%', '3.5', '18 unités/kWh'],
-            'Tendance': ['🔻', '🔺', '✅', '🔺', '🔻'],
-            'Statut': ['À améliorer', 'Bon', 'Excellent', 'Bon', 'À surveiller']
-        })
-        
-        st.dataframe(indicateurs, use_container_width=True)
-        
-        # Analyse de régression
-        st.subheader("Corrélation température/consommation")
-        fig = px.scatter(st.session_state.energie_data, x='Temperature_ext', y='Consommation_kWh',
-                        trendline="ols", title="Impact de la température sur la consommation")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab3:
-        st.subheader("Plan d'actions d'efficacité énergétique")
-        
-        actions = pd.DataFrame({
-            'Action': ['Installation LED', 'Isolation toiture', 'Optimisation CVC', 
-                      'Panneaux solaires', 'Variateurs de vitesse'],
-            'Économie estimée': ['15%', '10%', '20%', '25%', '12%'],
-            'Investissement': ['15k€', '25k€', '30k€', '50k€', '18k€'],
-            'ROI (ans)': ['1.5', '2.5', '2.0', '3.5', '2.0'],
-            'Statut': ['En cours', 'Planifié', 'Terminé', 'À étudier', 'En cours'],
-            'Priorité': ['Haute', 'Moyenne', 'Haute', 'Basse', 'Moyenne']
-        })
-        
-        st.dataframe(actions, use_container_width=True)
-        
-        # Formulaire d'ajout d'action
-        with st.expander("➕ Proposer une nouvelle action"):
-            with st.form("nouvelle_action"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    nom_action = st.text_input("Nom de l'action")
-                    economie = st.number_input("Économie estimée (%)", 0, 50, 10)
-                with col2:
-                    invest = st.number_input("Investissement (k€)", 0, 500, 20)
-                    priorite = st.selectbox("Priorité", ["Haute", "Moyenne", "Basse"])
-                
-                if st.form_submit_button("Soumettre"):
-                    st.success("✅ Action proposée avec succès!")
-    
-    with tab4:
-        st.subheader("Historique des audits énergétiques")
-        
-        audits = pd.DataFrame({
-            'Date': ['2024-01-15', '2023-10-10', '2023-07-05', '2023-04-12'],
-            'Auditeur': ['Bureau Veritas', 'SGS', 'DNV', 'Intertek'],
-            'Score': [92, 88, 85, 90],
-            'Non-conformités': [2, 3, 4, 2],
-            'Statut': ['Conforme', 'Conforme', 'Conforme', 'Conforme']
-        })
-        
-        st.dataframe(audits, use_container_width=True)
-        
-        # Graphique d'évolution
-        fig = px.line(audits, x='Date', y='Score', title="Évolution des scores d'audit")
-        st.plotly_chart(fig, use_container_width=True)
+# ==================== AFFICHAGE PRINCIPAL ====================
 
-# ==================== ISO 90001 - QUALITÉ ====================
-elif menu == "✅ ISO 90001 - Qualité":
-    st.header("✅ ISO 90001 - Management de la qualité")
-    
-    st.markdown('<p class="iso-badge">✓ Conforme ISO 90001:2015</p>', unsafe_allow_html=True)
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Indicateurs qualité", "📝 Non-conformités", "🔧 Actions correctives", "📋 Documents"])
-    
-    with tab1:
-        st.subheader("Indicateurs de performance qualité")
-        
-        # Graphiques
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig = px.line(st.session_state.qualite_data, x='Date', y='Taux_conformite',
-                         title="Évolution du taux de conformité")
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            fig = px.bar(st.session_state.qualite_data, x='Date', y='Non_conformites',
-                        title="Non-conformités par période")
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Métriques
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Taux conformité moyen", f"{st.session_state.qualite_data['Taux_conformite'].mean():.1f}%")
-        col2.metric("Objectif 2024", "98%", "+0.5%")
-        col3.metric("Indice CAPA", "92%", "+3%")
-        col4.metric("Satisfaction client", "4.7/5", "+0.2")
-    
-    with tab2:
-        st.subheader("Gestion des non-conformités")
-        
-        nc_data = pd.DataFrame({
-            'ID': ['NC001', 'NC002', 'NC003', 'NC004', 'NC005'],
-            'Date': ['2024-03-01', '2024-03-05', '2024-03-10', '2024-03-12', '2024-03-15'],
-            'Type': ['Documentation', 'Produit', 'Processus', 'Produit', 'Service'],
-            'Description': ['Manque procédure', 'Défaut emballage', 'Délai dépassé', 'Mauvaise étiquette', 'Retard livraison'],
-            'Responsable': ['Dupont', 'Martin', 'Bernard', 'Petit', 'Durand'],
-            'Statut': ['En cours', 'Résolu', 'En cours', 'Résolu', 'Nouveau'],
-            'Échéance': ['2024-03-20', '2024-03-15', '2024-03-25', '2024-03-18', '2024-03-30']
-        })
-        
-        st.dataframe(nc_data, use_container_width=True)
-        
-        # Analyse par type
-        nc_type = nc_data['Type'].value_counts()
-        fig = px.pie(values=nc_type.values, names=nc_type.index, title="Répartition des non-conformités")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab3:
-        st.subheader("Actions correctives et préventives")
-        
-        capa_data = pd.DataFrame({
-            'Action': ['Mise à jour procédure', 'Formation personnel', 'Nouveau contrôle', 
-                      'Maintenance préventive', 'Audit interne'],
-            'Type': ['Corrective', 'Préventive', 'Corrective', 'Préventive', 'Préventive'],
-            'Responsable': ['M. Jean', 'Mme Marie', 'M. Pierre', 'M. Paul', 'Mme Sophie'],
-            'Début': ['2024-03-01', '2024-03-10', '2024-03-05', '2024-03-15', '2024-03-20'],
-            'Fin prévue': ['2024-03-30', '2024-03-25', '2024-03-20', '2024-04-15', '2024-03-28'],
-            'Statut': ['En cours', 'Planifié', 'Terminé', 'En cours', 'Planifié']
-        })
-        
-        st.dataframe(capa_data, use_container_width=True)
-        
-        # Ajout d'action
-        with st.expander("➕ Nouvelle action"):
-            with st.form("action_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    action_nom = st.text_input("Titre de l'action")
-                    action_type = st.selectbox("Type", ["Corrective", "Préventive"])
-                with col2:
-                    responsable = st.text_input("Responsable")
-                    echeance = st.date_input("Date d'échéance")
-                
-                description = st.text_area("Description")
-                
-                if st.form_submit_button("Créer l'action"):
-                    st.success("✅ Action créée avec succès!")
-    
-    with tab4:
-        st.subheader("Documents qualité")
-        
-        documents = pd.DataFrame({
-            'Document': ['Manuel qualité', 'Procédures', 'Instructions', 'Enregistrements', 'Politique qualité'],
-            'Version': ['2.1', '3.0', '1.5', '2.0', '1.2'],
-            'Date révision': ['2024-01-15', '2024-02-01', '2024-01-20', '2024-02-10', '2024-01-05'],
-            'Responsable': ['Dupont', 'Martin', 'Bernard', 'Petit', 'Durand'],
-            'Statut': ['Approuvé', 'En révision', 'Approuvé', 'Validé', 'Approuvé']
-        })
-        
-        st.dataframe(documents, use_container_width=True)
-        
-        # Téléchargement
-        st.subheader("Télécharger les documents")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button("📄 Manuel qualité", "Contenu...", "manuel_qualite.pdf")
-            st.download_button("📋 Procédures", "Contenu...", "procedures.pdf")
-        with col2:
-            st.download_button("📊 Formulaire audit", "Contenu...", "audit_form.pdf")
-            st.download_button("📈 Rapport qualité", "Contenu...", "rapport_qualite.pdf")
+# Création de deux colonnes
+col_gauche, col_droite = st.columns([1, 1])
 
-# ==================== RAPPORTS ====================
-elif menu == "📊 Rapports & Analyses":
-    st.header("📊 Rapports et analyses")
+with col_gauche:
+    st.markdown("## 📋 Paramètres actuels")
     
-    # Sélection du type de rapport
-    col1, col2 = st.columns(2)
-    
+    # Affichage des paramètres dans des métriques
+    col1, col2, col3 = st.columns(3)
     with col1:
-        type_rapport = st.selectbox(
-            "Type de rapport",
-            ["Rapport de performance", "Rapport de stock", "Rapport énergétique", 
-             "Rapport qualité", "Rapport de conformité ISO", "Rapport personnalisé"]
-        )
-    
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Longueur", f"{longueur} m")
+        st.markdown('</div>', unsafe_allow_html=True)
     with col2:
-        periode = st.selectbox(
-            "Période",
-            ["Aujourd'hui", "Cette semaine", "Ce mois", "Ce trimestre", "Cette année", "Personnalisée"]
-        )
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Largeur", f"{largeur} m")
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Hauteur", f"{hauteur} m")
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # Dates si période personnalisée
-    if periode == "Personnalisée":
-        col1, col2 = st.columns(2)
-        with col1:
-            date_debut = st.date_input("Date début", datetime.now() - timedelta(days=30))
-        with col2:
-            date_fin = st.date_input("Date fin", datetime.now())
+    st.markdown("---")
     
-    # Génération du rapport
-    if st.button("📄 Générer le rapport", use_container_width=True):
-        with st.spinner("Génération du rapport en cours..."):
-            import time
-            time.sleep(2)
-        
-        st.success("✅ Rapport généré avec succès!")
-        
-        # Aperçu du rapport
-        st.subheader("Aperçu du rapport")
-        
-        if type_rapport == "Rapport de performance":
-            # Graphiques de performance
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                fig = px.line(x=['Sem1', 'Sem2', 'Sem3', 'Sem4'], 
-                             y=[85, 88, 92, 89],
-                             title="Performance globale")
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                fig = px.bar(x=['Stock', 'Énergie', 'Qualité', 'Service'], 
-                            y=[94, 88, 96, 91],
-                            title="Indicateurs par domaine")
-                st.plotly_chart(fig, use_container_width=True)
-        
-        elif type_rapport == "Rapport de stock":
-            # Analyse ABC
-            abc_data = pd.DataFrame({
-                'Catégorie': ['A (Valeur élevée)', 'B (Valeur moyenne)', 'C (Valeur faible)'],
-                'Nombre produits': [15, 35, 50],
-                'Valeur stock': [450000, 220000, 80000],
-                'Rotation': [12, 6, 2]
-            })
-            st.dataframe(abc_data, use_container_width=True)
-        
-        # Boutons d'export
-        st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.download_button("📥 Télécharger PDF", "Contenu PDF", "rapport.pdf")
-        with col2:
-            st.download_button("📊 Télécharger Excel", "Contenu Excel", "rapport.xlsx")
-        with col3:
-            st.download_button("📧 Envoyer par email", "Contenu email", "rapport.eml")
+    # Informations sur la palette
+    st.markdown("### 📦 Dimensions palette")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"Longueur: {palette_longueur} mm")
+    with col2:
+        st.info(f"Largeur: {palette_largeur} mm")
 
-# ==================== PARAMÈTRES ====================
-else:  # Paramètres
-    st.header("⚙️ Paramètres de l'application")
+if calculer:
+    # Calcul des dimensions des rayonnages
+    dimensions_ray = calculer_dimensions_rayonnage(
+        palette_longueur, palette_largeur, nb_niveaux, profondeur_double
+    )
     
-    tab1, tab2, tab3 = st.tabs(["👤 Utilisateur", "🔔 Notifications", "📊 Configuration"])
+    # Calcul de la capacité
+    calculs = calculer_capacite(
+        longueur, largeur, hauteur, largeur_allee, dimensions_ray, zone_securite
+    )
     
-    with tab1:
-        st.subheader("Profil utilisateur")
+    with col_gauche:
+        st.markdown("---")
+        st.markdown("## 📊 Résultats du dimensionnement")
         
+        # Résultats dans des métriques
         col1, col2 = st.columns(2)
         with col1:
-            st.text_input("Nom", value="Admin Entrepôt")
-            st.text_input("Email", value="admin@entrepot.com")
-            st.text_input("Fonction", value="Responsable d'exploitation")
+            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+            st.metric("Surface totale", f"{calculs['surface_totale']:.1f} m²")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+            st.metric("Surface utile", f"{calculs['surface_utile']:.1f} m²")
+            st.markdown('</div>', unsafe_allow_html=True)
         
         with col2:
-            st.selectbox("Langue", ["Français", "English", "Español"])
-            st.selectbox("Thème", ["Clair", "Sombre", "Système"])
-            st.selectbox("Fuseau horaire", ["Europe/Paris", "UTC", "America/New_York"])
+            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+            st.metric("Nombre de rangées", f"{calculs['nb_rangees']}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+            st.metric("Alvéoles par rangée", f"{calculs['nb_alveoles_par_rangee']}")
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        if st.button("Mettre à jour le profil"):
-            st.success("✅ Profil mis à jour!")
+        # Capacité totale
+        st.markdown('<div class="result-card" style="background-color: #c3e6cb;">', unsafe_allow_html=True)
+        st.metric("🏆 CAPACITÉ TOTALE DE STOCKAGE", 
+                 f"{calculs['capacite'] * nb_niveaux} palettes",
+                 delta=f"{nb_niveaux} niveaux")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Détails techniques
+        with st.expander("📐 Voir les détails techniques"):
+            st.write(f"**Hauteur rayonnage:** {dimensions_ray['hauteur']:.2f} m")
+            st.write(f"**Profondeur rayonnage:** {dimensions_ray['profondeur']:.2f} m")
+            st.write(f"**Longueur alvéole:** {dimensions_ray['longueur_alveole']:.2f} m")
+            st.write(f"**Taux d'occupation max:** {100 - zone_securite}%")
+            st.write(f"**Nombre de niveaux:** {nb_niveaux}")
+            st.write(f"**Type d'allée:** {type_allee} ({largeur_allee} m)")
+        
+        # Optimisation possible
+        taux_occupation = (calculs['capacite'] * nb_niveaux * 1.5) / (longueur * largeur * hauteur) * 100
+        st.progress(min(taux_occupation/100, 1.0))
+        st.caption(f"Taux d'optimisation: {taux_occupation:.1f}%")
     
-    with tab2:
-        st.subheader("Configuration des notifications")
+    with col_droite:
+        st.markdown("## 🗺️ Plan 2D de l'entrepôt")
         
-        st.checkbox("Alertes stock faible", value=True)
-        st.checkbox("Alertes consommation énergétique", value=True)
-        st.checkbox("Alertes non-conformités qualité", value=True)
-        st.checkbox("Rapports hebdomadaires", value=False)
-        st.checkbox("Rappels d'audit", value=True)
+        # Génération du plan
+        fig = generer_plan_2d(longueur, largeur, largeur_allee, dimensions_ray, calculs)
+        st.pyplot(fig)
         
-        st.number_input("Seuil d'alerte stock (%)", 10, 50, 20)
-        st.time_input("Heure d'envoi des rapports", value=datetime.now().time())
-    
-    with tab3:
-        st.subheader("Configuration de l'application")
-        
+        # Options de téléchargement
         col1, col2 = st.columns(2)
         with col1:
-            st.number_input("Rafraîchissement auto (secondes)", 30, 3600, 300)
-            st.selectbox("Format date", ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"])
+            if st.button("📥 Télécharger le plan PNG", use_container_width=True):
+                fig.savefig("plan_entrepot.png", dpi=300, bbox_inches='tight')
+                with open("plan_entrepot.png", "rb") as file:
+                    st.download_button(
+                        "Confirmer téléchargement",
+                        file,
+                        "plan_entrepot.png",
+                        "image/png"
+                    )
         
         with col2:
-            st.selectbox("Devise", ["€", "$", "£"])
-            st.selectbox("Unité de mesure", ["Métrique", "Impérial"])
+            if st.button("📊 Exporter les données", use_container_width=True):
+                data = {
+                    'Paramètre': ['Longueur', 'Largeur', 'Hauteur', 'Surface', 'Capacité', 'Nb rangées'],
+                    'Valeur': [longueur, largeur, hauteur, calculs['surface_totale'], 
+                              calculs['capacite'] * nb_niveaux, calculs['nb_rangees']],
+                    'Unité': ['m', 'm', 'm', 'm²', 'palettes', '-']
+                }
+                df = pd.DataFrame(data)
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    "Confirmer téléchargement",
+                    csv,
+                    "dimensionnement.csv",
+                    "text/csv"
+                )
+
+else:
+    with col_gauche:
+        st.info("👈 Ajustez les paramètres dans la barre latérale et cliquez sur 'Lancer le dimensionnement'")
         
-        st.slider("Niveau de détail des rapports", 1, 5, 3)
+        # Exemple d'illustration
+        st.markdown("### 🎯 Fonctionnalités")
+        st.markdown("""
+        - **Dimensions personnalisables** de l'entrepôt
+        - **Différents types de palettes** (Europe, Industrielle, etc.)
+        - **Configuration des allées** selon l'équipement
+        - **Rayonnages simple ou double profondeur**
+        - **Calcul automatique** de la capacité
+        - **Génération d'un plan 2D** avec disposition
+        - **Export des résultats** en PNG et CSV
+        """)
+    
+    with col_droite:
+        st.markdown("## 🗺️ Aperçu du plan")
         
-        if st.button("Sauvegarder la configuration"):
-            st.success("✅ Configuration sauvegardée!")
+        # Plan par défaut pour illustration
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        
+        # Dessiner un entrepôt exemple
+        entrepot = Rectangle((0, 0), 50, 30, linewidth=3, edgecolor='black', facecolor='none')
+        ax.add_patch(entrepot)
+        
+        # Allées
+        ax.add_patch(Rectangle((23.5, 0), 3, 30, facecolor='lightgray', alpha=0.5))
+        ax.add_patch(Rectangle((0, 13.5), 50, 3, facecolor='lightgray', alpha=0.5))
+        
+        # Rayonnages simplifiés
+        for i in range(3):
+            ax.add_patch(Rectangle((2 + i*8, 2), 1.5, 10, facecolor='skyblue', alpha=0.8))
+            ax.add_patch(Rectangle((2 + i*8, 18), 1.5, 10, facecolor='steelblue', alpha=0.8))
+        
+        ax.set_xlim(-2, 52)
+        ax.set_ylim(-2, 32)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Longueur (m)')
+        ax.set_ylabel('Largeur (m)')
+        ax.set_title('Exemple de plan 2D (avec paramètres par défaut)')
+        ax.grid(True, alpha=0.3)
+        
+        st.pyplot(fig)
+        st.caption("Plan illustratif - Utilisez les paramètres pour générer votre plan personnalisé")
 
 # Pied de page
 st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: gray; padding: 1rem;'>
-        <p>🏭 Gestion d'Entrepôt Intelligente - Conforme ISO 50001 & 90001</p>
-        <p>Version 1.0.0 | © 2024 Tous droits réservés</p>
+        <p>📐 Dimensionnement automatique d'entrepôt - Version 2.0</p>
+        <p>Prend en compte les allées, types de transport et disposition optimale des rayonnages</p>
     </div>
     """,
     unsafe_allow_html=True
