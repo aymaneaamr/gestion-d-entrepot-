@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.patches import Rectangle, FancyBboxPatch
+from matplotlib.patches import Rectangle
 import math
 
 # Configuration de la page
@@ -46,20 +46,6 @@ st.markdown("""
 st.markdown('<h1 class="main-header">📐 DIMENSIONNEMENT AUTOMATIQUE D\'ENTREPÔT</h1>', 
             unsafe_allow_html=True)
 
-# Initialisation des paramètres dans session state
-if 'params' not in st.session_state:
-    st.session_state.params = {
-        'longueur': 50.0,
-        'largeur': 30.0,
-        'hauteur': 8.0,
-        'type_palette': 'Europe (800x1200)',
-        'type_rayonnage': 'Classique',
-        'largeur_allee': 3.0,
-        'nb_niveaux': 3,
-        'profondeur_double': False,
-        'zone_securite': 10
-    }
-
 # Sidebar pour les paramètres d'entrée
 st.sidebar.image("https://via.placeholder.com/300x100/3498db/ffffff?text=DIMENSIONNEMENT", use_column_width=True)
 st.sidebar.title("📏 Paramètres d'entrée")
@@ -84,7 +70,6 @@ if type_palette == "Personnalisée":
     with col2:
         palette_largeur = st.number_input("Largeur palette (mm)", min_value=400, max_value=2000, value=1200, step=50)
 else:
-    # Dimensions standards
     dimensions_palette = {
         "Europe (800x1200)": (800, 1200),
         "Industrielle (1000x1200)": (1000, 1200),
@@ -92,13 +77,6 @@ else:
         "Demi-palette (600x800)": (600, 800)
     }
     palette_longueur, palette_largeur = dimensions_palette[type_palette]
-
-# Type de rayonnage
-st.sidebar.subheader("🏗️ Type de rayonnage")
-type_rayonnage = st.sidebar.selectbox(
-    "Configuration",
-    ["Classique", "Navette", "Mobile", "Cantilever", "Drive-in"]
-)
 
 # Configuration des allées
 st.sidebar.subheader("🚶 Configuration des allées")
@@ -126,8 +104,10 @@ st.sidebar.subheader("📊 Configuration des rayonnages")
 col1, col2 = st.sidebar.columns(2)
 with col1:
     nb_niveaux = st.number_input("Nombre de niveaux", min_value=1, max_value=10, value=3)
+    orientation = st.selectbox("Orientation des rayons", ["Longueur", "Largeur"])
 with col2:
     profondeur_double = st.checkbox("Double profondeur", value=False)
+    nb_rangees = st.number_input("Nombre de rangées", min_value=1, max_value=20, value=4)
 
 zone_securite = st.sidebar.slider("Zone de sécurité (%)", min_value=5, max_value=20, value=10)
 
@@ -138,164 +118,263 @@ calculer = st.sidebar.button("🚀 Lancer le dimensionnement", use_container_wid
 
 def calculer_dimensions_rayonnage(palette_longueur, palette_largeur, nb_niveaux, profondeur_double):
     """Calcule les dimensions d'un rayonnage"""
-    # Conversion mm -> m
     pal_l = palette_longueur / 1000
     pal_L = palette_largeur / 1000
     
-    # Épaisseur des montants (m)
-    epaisseur_montant = 0.1
+    # Dimensions standard d'un rayonnage
+    hauteur_rayonnage = nb_niveaux * (pal_L + 0.15) + 0.2
     
-    # Hauteur du rayonnage
-    hauteur_rayonnage = nb_niveaux * (pal_L + 0.15) + 0.2  # 15cm d'espace par niveau + 20cm de base
-    
-    # Profondeur du rayonnage
     if profondeur_double:
-        profondeur_rayonnage = (pal_l * 2) + 0.3  # Double profondeur + espace
+        profondeur_rayonnage = (pal_l * 2) + 0.3
     else:
-        profondeur_rayonnage = pal_l + 0.15  # Simple profondeur
+        profondeur_rayonnage = pal_l + 0.15
     
-    # Longueur d'un alvéole
-    longueur_alveole = pal_L + 0.1  # 10cm d'espace
+    largeur_alveole = pal_L + 0.1
     
     return {
         'hauteur': hauteur_rayonnage,
         'profondeur': profondeur_rayonnage,
-        'longueur_alveole': longueur_alveole,
+        'largeur_alveole': largeur_alveole,
         'pal_l': pal_l,
         'pal_L': pal_L
     }
 
-def calculer_capacite(longueur, largeur, hauteur, largeur_allee, dimensions_ray, zone_securite):
+def calculer_capacite(longueur, largeur, dimensions_ray, largeur_allee, nb_rangees, orientation):
     """Calcule la capacité de stockage"""
     
-    # Surface utile (enlevant zone de sécurité)
-    surface_totale = longueur * largeur
-    surface_utile = surface_totale * (1 - zone_securite/100)
+    if orientation == "Longueur":
+        longueur_disponible = longueur - (2 * largeur_allee)
+        nb_alveoles_par_rangee = math.floor(longueur_disponible / dimensions_ray['largeur_alveole'])
+        longueur_rangee = nb_alveoles_par_rangee * dimensions_ray['largeur_alveole']
+        capacite_par_rangee = nb_alveoles_par_rangee * nb_niveaux
+    else:
+        largeur_disponible = largeur - (2 * largeur_allee)
+        nb_alveoles_par_rangee = math.floor(largeur_disponible / dimensions_ray['largeur_alveole'])
+        longueur_rangee = nb_alveoles_par_rangee * dimensions_ray['largeur_alveole']
+        capacite_par_rangee = nb_alveoles_par_rangee * nb_niveaux
     
-    # Organisation des allées
-    nb_rangees_longueur = math.floor((longueur - largeur_allee) / (dimensions_ray['profondeur'] + largeur_allee/2))
-    nb_rangees_largeur = math.floor((largeur - largeur_allee) / (dimensions_ray['profondeur'] + largeur_allee/2))
-    
-    # Nombre d'alvéoles par rangée
-    nb_alveoles_par_rangee = math.floor(longueur / dimensions_ray['longueur_alveole'])
-    
-    # Calculs
-    nb_total_rangees = nb_rangees_longueur + nb_rangees_largeur
-    nb_total_alveoles = nb_total_rangees * nb_alveoles_par_rangee
-    capacite_totale = nb_total_alveoles * nb_niveaux
+    capacite_totale = capacite_par_rangee * nb_rangees
     
     return {
-        'surface_totale': surface_totale,
-        'surface_utile': surface_utile,
-        'nb_rangees': nb_total_rangees,
         'nb_alveoles_par_rangee': nb_alveoles_par_rangee,
-        'capacite': capacite_totale,
-        'nb_rangees_longueur': nb_rangees_longueur,
-        'nb_rangees_largeur': nb_rangees_largeur
+        'longueur_rangee': longueur_rangee,
+        'capacite_par_rangee': capacite_par_rangee,
+        'capacite_totale': capacite_totale
     }
 
-def generer_plan_2d(longueur, largeur, largeur_allee, dimensions_ray, calculs):
-    """Génère un plan 2D de l'entrepôt"""
+def generer_plan_2d_professionnel(longueur, largeur, largeur_allee, dimensions_ray, 
+                                  nb_rangees, orientation, calculs):
+    """Génère un plan 2D professionnel et bien structuré"""
     
+    # Création de la figure avec un ratio approprié
     fig, ax = plt.subplots(1, 1, figsize=(14, 10))
     
-    # Dessiner le contour de l'entrepôt
-    entrepot = Rectangle((0, 0), longueur, largeur, linewidth=3, 
-                        edgecolor='black', facecolor='none', alpha=1)
-    ax.add_patch(entrepot)
+    # Configuration du fond
+    ax.set_facecolor('#f5f5f5')
     
-    # Couleurs pour les différents éléments
-    couleur_allee = '#d3d3d3'  # Gris clair
-    couleur_rayonnage = '#87CEEB'  # Bleu ciel
-    couleur_rayonnage_fonce = '#4682B4'  # Bleu acier
+    # Dessiner le contour de l'entrepôt avec double ligne
+    contour_externe = Rectangle((0, 0), longueur, largeur, 
+                                linewidth=3, edgecolor='#2c3e50', 
+                                facecolor='none', zorder=1)
+    contour_interne = Rectangle((0.2, 0.2), longueur-0.4, largeur-0.4, 
+                                linewidth=1, edgecolor='#95a5a6', 
+                                facecolor='none', linestyle='--', zorder=1)
+    ax.add_patch(contour_externe)
+    ax.add_patch(contour_interne)
+    
+    # Ajouter les dimensions sur le contour
+    ax.text(longueur/2, -1.5, f'{longueur} m', ha='center', va='center', 
+            fontsize=10, fontweight='bold', bbox=dict(boxstyle="round,pad=0.3", facecolor='white'))
+    ax.text(-2.5, largeur/2, f'{largeur} m', ha='center', va='center', 
+            fontsize=10, fontweight='bold', rotation=90, 
+            bbox=dict(boxstyle="round,pad=0.3", facecolor='white'))
     
     # Dessiner les allées principales
-    # Allée centrale longitudinale
-    ax.add_patch(Rectangle((longueur/2 - largeur_allee/2, 0), 
-                           largeur_allee, largeur, 
-                           facecolor=couleur_allee, alpha=0.3, edgecolor='gray', linewidth=1))
+    if orientation == "Longueur":
+        # Allées longitudinales (parallèles à la longueur)
+        for i in range(nb_rangees + 1):
+            x_allee = i * (dimensions_ray['profondeur'] + largeur_allee)
+            if x_allee < longueur:
+                allee = Rectangle((x_allee, 0), largeur_allee, largeur,
+                                 facecolor='#ecf0f1', edgecolor='#7f8c8d', 
+                                 linewidth=1, alpha=0.8, zorder=2)
+                ax.add_patch(allee)
+                # Ajouter des pointillés au centre de l'allée
+                ax.plot([x_allee + largeur_allee/2, x_allee + largeur_allee/2], 
+                       [0, largeur], '--', color='#7f8c8d', linewidth=0.5, alpha=0.5)
+    else:
+        # Allées transversales (parallèles à la largeur)
+        for i in range(nb_rangees + 1):
+            y_allee = i * (dimensions_ray['profondeur'] + largeur_allee)
+            if y_allee < largeur:
+                allee = Rectangle((0, y_allee), longueur, largeur_allee,
+                                 facecolor='#ecf0f1', edgecolor='#7f8c8d', 
+                                 linewidth=1, alpha=0.8, zorder=2)
+                ax.add_patch(allee)
+                ax.plot([0, longueur], 
+                       [y_allee + largeur_allee/2, y_allee + largeur_allee/2], 
+                       '--', color='#7f8c8d', linewidth=0.5, alpha=0.5)
     
-    # Allée transversale
-    ax.add_patch(Rectangle((0, largeur/2 - largeur_allee/2), 
-                           longueur, largeur_allee, 
-                           facecolor=couleur_allee, alpha=0.3, edgecolor='gray', linewidth=1))
+    # Dessiner les zones de sécurité (bordures)
+    zone_securite_couleur = '#fff3cd'
+    # Bande de sécurité en haut
+    ax.add_patch(Rectangle((0, largeur-1), longueur, 1, 
+                          facecolor=zone_securite_couleur, alpha=0.3, 
+                          edgecolor='none', zorder=1))
+    # Bande de sécurité en bas
+    ax.add_patch(Rectangle((0, 0), longueur, 1, 
+                          facecolor=zone_securite_couleur, alpha=0.3, 
+                          edgecolor='none', zorder=1))
+    # Bande de sécurité à gauche
+    ax.add_patch(Rectangle((0, 0), 1, largeur, 
+                          facecolor=zone_securite_couleur, alpha=0.3, 
+                          edgecolor='none', zorder=1))
+    # Bande de sécurité à droite
+    ax.add_patch(Rectangle((longueur-1, 0), 1, largeur, 
+                          facecolor=zone_securite_couleur, alpha=0.3, 
+                          edgecolor='none', zorder=1))
     
     # Dessiner les rayonnages
-    # Rayonnages sur la longueur
-    for i in range(calculs['nb_rangees_longueur']):
-        x = (i * (dimensions_ray['profondeur'] + largeur_allee/2)) + 1
-        y = 2
-        # Rayonnage de gauche
-        ax.add_patch(Rectangle((x, y), 
-                               dimensions_ray['profondeur'], 
-                               largeur/2 - largeur_allee/2 - 4,
-                               facecolor=couleur_rayonnage, edgecolor='blue', alpha=0.7))
-        # Ajouter des lignes pour représenter les alvéoles
-        for j in range(0, int(largeur/2 - largeur_allee/2 - 4), 
-                      int(dimensions_ray['longueur_alveole']*2)):
-            ax.axhline(y=y+j, xmin=x/longueur, 
-                      xmax=(x+dimensions_ray['profondeur'])/longueur, 
-                      color='white', linewidth=0.5)
-        
-        # Rayonnage de droite
-        ax.add_patch(Rectangle((x, largeur/2 + largeur_allee/2 + 2), 
-                               dimensions_ray['profondeur'], 
-                               largeur/2 - largeur_allee/2 - 4,
-                               facecolor=couleur_rayonnage_fonce, edgecolor='darkblue', alpha=0.7))
+    couleurs_rayonnage = ['#3498db', '#2980b9', '#1f618d', '#154360']
     
-    # Rayonnages sur la largeur
-    for i in range(calculs['nb_rangees_largeur']):
-        y = (i * (dimensions_ray['profondeur'] + largeur_allee/2)) + 1
-        x = 2
-        # Rayonnage du bas
-        ax.add_patch(Rectangle((x, y), 
-                               longueur/2 - largeur_allee/2 - 4, 
-                               dimensions_ray['profondeur'],
-                               facecolor=couleur_rayonnage, edgecolor='blue', alpha=0.7))
-        # Rayonnage du haut
-        ax.add_patch(Rectangle((longueur/2 + largeur_allee/2 + 2, y), 
-                               longueur/2 - largeur_allee/2 - 4, 
-                               dimensions_ray['profondeur'],
-                               facecolor=couleur_rayonnage_fonce, edgecolor='darkblue', alpha=0.7))
+    if orientation == "Longueur":
+        for i in range(nb_rangees):
+            x_start = i * (dimensions_ray['profondeur'] + largeur_allee) + largeur_allee
+            
+            # Vérifier que le rayonnage reste dans l'entrepôt
+            if x_start + dimensions_ray['profondeur'] <= longueur:
+                # Rayonnage
+                couleur = couleurs_rayonnage[i % len(couleurs_rayonnage)]
+                rayonnage = Rectangle((x_start, 2), 
+                                     dimensions_ray['profondeur'], 
+                                     largeur - 4,
+                                     facecolor=couleur, edgecolor='white',
+                                     linewidth=2, alpha=0.9, zorder=3)
+                ax.add_patch(rayonnage)
+                
+                # Ajouter un dégradé pour l'effet 3D
+                for j in range(3):
+                    ax.add_patch(Rectangle((x_start + j*0.1, 2), 0.05, largeur-4,
+                                          facecolor='white', alpha=0.2, zorder=4))
+                
+                # Ajouter les alvéoles (représentation)
+                nb_alveoles = min(calculs['nb_alveoles_par_rangee'], 10)  # Max 10 pour lisibilité
+                espacement = (largeur - 4) / (nb_alveoles + 1)
+                
+                for k in range(nb_alveoles):
+                    y_pos = 2 + (k + 1) * espacement
+                    # Rectangle représentant une palette
+                    pal = Rectangle((x_start + 0.2, y_pos - dimensions_ray['pal_L']/2),
+                                   dimensions_ray['profondeur'] - 0.4,
+                                   dimensions_ray['pal_L'] - 0.1,
+                                   facecolor='#f1c40f', edgecolor='#e67e22',
+                                   linewidth=1, alpha=0.7, zorder=5)
+                    ax.add_patch(pal)
+                    
+                    # Ajouter le texte du niveau
+                    ax.text(x_start + dimensions_ray['profondeur']/2, y_pos,
+                           f'N{1}', ha='center', va='center',
+                           fontsize=6, color='black', fontweight='bold')
+                
+                # Ajouter le numéro de la rangée
+                ax.text(x_start + dimensions_ray['profondeur']/2, largeur/2,
+                       f'R{i+1}', ha='center', va='center',
+                       fontsize=12, color='white', fontweight='bold', zorder=6)
     
-    # Ajouter des étiquettes pour les zones
-    ax.text(2, largeur-2, 'Zone A', fontsize=12, fontweight='bold', color='darkblue')
-    ax.text(longueur-10, largeur-2, 'Zone B', fontsize=12, fontweight='bold', color='darkblue')
-    ax.text(2, 2, 'Zone C', fontsize=12, fontweight='bold', color='darkblue')
-    ax.text(longueur-10, 2, 'Zone D', fontsize=12, fontweight='bold', color='darkblue')
+    else:  # Orientation Largeur
+        for i in range(nb_rangees):
+            y_start = i * (dimensions_ray['profondeur'] + largeur_allee) + largeur_allee
+            
+            if y_start + dimensions_ray['profondeur'] <= largeur:
+                couleur = couleurs_rayonnage[i % len(couleurs_rayonnage)]
+                rayonnage = Rectangle((2, y_start), 
+                                     longueur - 4,
+                                     dimensions_ray['profondeur'],
+                                     facecolor=couleur, edgecolor='white',
+                                     linewidth=2, alpha=0.9, zorder=3)
+                ax.add_patch(rayonnage)
+                
+                # Ajouter les alvéoles
+                nb_alveoles = min(calculs['nb_alveoles_par_rangee'], 10)
+                espacement = (longueur - 4) / (nb_alveoles + 1)
+                
+                for k in range(nb_alveoles):
+                    x_pos = 2 + (k + 1) * espacement
+                    pal = Rectangle((x_pos - dimensions_ray['pal_L']/2, y_start + 0.2),
+                                   dimensions_ray['pal_L'] - 0.1,
+                                   dimensions_ray['profondeur'] - 0.4,
+                                   facecolor='#f1c40f', edgecolor='#e67e22',
+                                   linewidth=1, alpha=0.7, zorder=5)
+                    ax.add_patch(pal)
+                
+                ax.text(longueur/2, y_start + dimensions_ray['profondeur']/2,
+                       f'R{i+1}', ha='center', va='center',
+                       fontsize=12, color='white', fontweight='bold', zorder=6)
     
-    # Légende
+    # Ajouter la légende
     legend_elements = [
-        Rectangle((0, 0), 1, 1, facecolor=couleur_allee, alpha=0.3, label='Allées'),
-        Rectangle((0, 0), 1, 1, facecolor=couleur_rayonnage, label='Rayonnages'),
-        Rectangle((0, 0), 1, 1, facecolor='white', edgecolor='black', label='Contour entrepôt')
+        Rectangle((0, 0), 1, 1, facecolor='#ecf0f1', edgecolor='#7f8c8d', label='Allées de circulation'),
+        Rectangle((0, 0), 1, 1, facecolor='#3498db', label='Rayonnages'),
+        Rectangle((0, 0), 1, 1, facecolor='#f1c40f', label='Emplacements palettes'),
+        Rectangle((0, 0), 1, 1, facecolor='#fff3cd', alpha=0.3, label='Zone de sécurité'),
+        plt.Line2D([0], [0], color='#2c3e50', linewidth=3, label='Contour entrepôt')
     ]
-    ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.15, 1))
     
-    # Configuration du graphique
-    ax.set_xlim(-2, longueur + 2)
-    ax.set_ylim(-2, largeur + 2)
+    ax.legend(handles=legend_elements, loc='upper right', 
+             bbox_to_anchor=(1.15, 1), frameon=True, 
+             facecolor='white', edgecolor='black', fontsize=10)
+    
+    # Ajouter un titre et des labels
+    ax.set_title('🗺️ PLAN 2D DE L\'ENTREPÔT - VUE DE DESSUS', 
+                fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('Longueur (mètres)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Largeur (mètres)', fontsize=12, fontweight='bold')
+    
+    # Configurer les axes
+    ax.set_xlim(-3, longueur + 3)
+    ax.set_ylim(-3, largeur + 3)
     ax.set_aspect('equal')
-    ax.set_xlabel('Longueur (m)', fontsize=12)
-    ax.set_ylabel('Largeur (m)', fontsize=12)
-    ax.set_title('📐 Plan 2D de l\'entrepôt - Vue de dessus', fontsize=16, fontweight='bold')
-    ax.grid(True, alpha=0.3)
     
-    # Ajouter une échelle
-    ax.plot([longueur-20, longueur-10], [largeur+1, largeur+1], 'k-', linewidth=3)
-    ax.text(longueur-15, largeur+1.5, '10 m', ha='center')
+    # Grille plus professionnelle
+    ax.grid(True, which='major', linestyle=':', linewidth=0.5, color='gray', alpha=0.3)
     
+    # Graduations personnalisées
+    xticks = np.arange(0, longueur + 1, 5)
+    yticks = np.arange(0, largeur + 1, 5)
+    ax.set_xticks(xticks)
+    ax.set_yticks(yticks)
+    ax.set_xticklabels([f'{int(x)}' for x in xticks])
+    ax.set_yticklabels([f'{int(y)}' for y in yticks])
+    
+    # Ajouter une boussole (indication du nord)
+    ax.annotate('N', xy=(longueur+1, largeur-2), xytext=(longueur+2, largeur-2),
+                arrowprops=dict(facecolor='black', shrink=0.05, width=2),
+                fontsize=14, fontweight='bold')
+    
+    # Ajouter un cartouche d'informations
+    info_text = f"""INFORMATIONS:
+    • Surface: {longueur*largeur:.0f} m²
+    • Capacité: {calculs['capacite_totale']} palettes
+    • Rangées: {nb_rangees}
+    • Allées: {largeur_allee}m
+    • Niveaux: {nb_niveaux}"""
+    
+    ax.text(0.02, 0.98, info_text, transform=ax.transAxes,
+           fontsize=9, verticalalignment='top',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
+    
+    plt.tight_layout()
     return fig
 
 # ==================== AFFICHAGE PRINCIPAL ====================
 
 # Création de deux colonnes
-col_gauche, col_droite = st.columns([1, 1])
+col_gauche, col_droite = st.columns([1, 1.2])
 
 with col_gauche:
     st.markdown("## 📋 Paramètres actuels")
     
-    # Affichage des paramètres dans des métriques
+    # Affichage des paramètres
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
@@ -328,29 +407,21 @@ if calculer:
     
     # Calcul de la capacité
     calculs = calculer_capacite(
-        longueur, largeur, hauteur, largeur_allee, dimensions_ray, zone_securite
+        longueur, largeur, dimensions_ray, largeur_allee, nb_rangees, orientation
     )
     
     with col_gauche:
         st.markdown("---")
         st.markdown("## 📊 Résultats du dimensionnement")
         
-        # Résultats dans des métriques
+        # Résultats
         col1, col2 = st.columns(2)
         with col1:
             st.markdown('<div class="result-card">', unsafe_allow_html=True)
-            st.metric("Surface totale", f"{calculs['surface_totale']:.1f} m²")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            st.markdown('<div class="result-card">', unsafe_allow_html=True)
-            st.metric("Surface utile", f"{calculs['surface_utile']:.1f} m²")
+            st.metric("Surface totale", f"{longueur * largeur:.1f} m²")
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col2:
-            st.markdown('<div class="result-card">', unsafe_allow_html=True)
-            st.metric("Nombre de rangées", f"{calculs['nb_rangees']}")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
             st.markdown('<div class="result-card">', unsafe_allow_html=True)
             st.metric("Alvéoles par rangée", f"{calculs['nb_alveoles_par_rangee']}")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -358,7 +429,7 @@ if calculer:
         # Capacité totale
         st.markdown('<div class="result-card" style="background-color: #c3e6cb;">', unsafe_allow_html=True)
         st.metric("🏆 CAPACITÉ TOTALE DE STOCKAGE", 
-                 f"{calculs['capacite'] * nb_niveaux} palettes",
+                 f"{calculs['capacite_totale']} palettes",
                  delta=f"{nb_niveaux} niveaux")
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -366,106 +437,79 @@ if calculer:
         with st.expander("📐 Voir les détails techniques"):
             st.write(f"**Hauteur rayonnage:** {dimensions_ray['hauteur']:.2f} m")
             st.write(f"**Profondeur rayonnage:** {dimensions_ray['profondeur']:.2f} m")
-            st.write(f"**Longueur alvéole:** {dimensions_ray['longueur_alveole']:.2f} m")
-            st.write(f"**Taux d'occupation max:** {100 - zone_securite}%")
-            st.write(f"**Nombre de niveaux:** {nb_niveaux}")
+            st.write(f"**Largeur alvéole:** {dimensions_ray['largeur_alveole']:.2f} m")
+            st.write(f"**Nombre de rangées:** {nb_rangees}")
+            st.write(f"**Orientation:** {orientation}")
             st.write(f"**Type d'allée:** {type_allee} ({largeur_allee} m)")
         
-        # Optimisation possible
-        taux_occupation = (calculs['capacite'] * nb_niveaux * 1.5) / (longueur * largeur * hauteur) * 100
-        st.progress(min(taux_occupation/100, 1.0))
-        st.caption(f"Taux d'optimisation: {taux_occupation:.1f}%")
+        # Téléchargement des données
+        if st.button("📥 Télécharger les données", use_container_width=True):
+            data = {
+                'Paramètre': ['Longueur', 'Largeur', 'Hauteur', 'Surface', 'Capacité', 
+                             'Nb rangées', 'Alvéoles/rangée', 'Type palette'],
+                'Valeur': [longueur, largeur, hauteur, longueur*largeur, 
+                          calculs['capacite_totale'], nb_rangees, 
+                          calculs['nb_alveoles_par_rangee'], type_palette],
+                'Unité': ['m', 'm', 'm', 'm²', 'palettes', '-', '-', '-']
+            }
+            df = pd.DataFrame(data)
+            csv = df.to_csv(index=False)
+            st.download_button(
+                "Confirmer téléchargement CSV",
+                csv,
+                "dimensionnement_entrepot.csv",
+                "text/csv"
+            )
     
     with col_droite:
-        st.markdown("## 🗺️ Plan 2D de l'entrepôt")
+        st.markdown("## 🗺️ Plan 2D professionnel")
         
-        # Génération du plan
-        fig = generer_plan_2d(longueur, largeur, largeur_allee, dimensions_ray, calculs)
+        # Génération du plan amélioré
+        fig = generer_plan_2d_professionnel(
+            longueur, largeur, largeur_allee, dimensions_ray, 
+            nb_rangees, orientation, calculs
+        )
         st.pyplot(fig)
         
-        # Options de téléchargement
+        # Options de téléchargement du plan
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📥 Télécharger le plan PNG", use_container_width=True):
-                fig.savefig("plan_entrepot.png", dpi=300, bbox_inches='tight')
-                with open("plan_entrepot.png", "rb") as file:
+            if st.button("📸 Télécharger le plan (PNG)", use_container_width=True):
+                fig.savefig("plan_entrepot_professionnel.png", dpi=300, bbox_inches='tight')
+                with open("plan_entrepot_professionnel.png", "rb") as file:
                     st.download_button(
-                        "Confirmer téléchargement",
+                        "Confirmer PNG",
                         file,
-                        "plan_entrepot.png",
+                        "plan_entrepot_professionnel.png",
                         "image/png"
                     )
         
         with col2:
-            if st.button("📊 Exporter les données", use_container_width=True):
-                data = {
-                    'Paramètre': ['Longueur', 'Largeur', 'Hauteur', 'Surface', 'Capacité', 'Nb rangées'],
-                    'Valeur': [longueur, largeur, hauteur, calculs['surface_totale'], 
-                              calculs['capacite'] * nb_niveaux, calculs['nb_rangees']],
-                    'Unité': ['m', 'm', 'm', 'm²', 'palettes', '-']
-                }
-                df = pd.DataFrame(data)
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    "Confirmer téléchargement",
-                    csv,
-                    "dimensionnement.csv",
-                    "text/csv"
-                )
+            if st.button("📊 Télécharger le plan (PDF)", use_container_width=True):
+                fig.savefig("plan_entrepot_professionnel.pdf", format='pdf', bbox_inches='tight')
+                with open("plan_entrepot_professionnel.pdf", "rb") as file:
+                    st.download_button(
+                        "Confirmer PDF",
+                        file,
+                        "plan_entrepot_professionnel.pdf",
+                        "application/pdf"
+                    )
 
 else:
     with col_gauche:
         st.info("👈 Ajustez les paramètres dans la barre latérale et cliquez sur 'Lancer le dimensionnement'")
-        
-        # Exemple d'illustration
-        st.markdown("### 🎯 Fonctionnalités")
-        st.markdown("""
-        - **Dimensions personnalisables** de l'entrepôt
-        - **Différents types de palettes** (Europe, Industrielle, etc.)
-        - **Configuration des allées** selon l'équipement
-        - **Rayonnages simple ou double profondeur**
-        - **Calcul automatique** de la capacité
-        - **Génération d'un plan 2D** avec disposition
-        - **Export des résultats** en PNG et CSV
-        """)
     
     with col_droite:
         st.markdown("## 🗺️ Aperçu du plan")
-        
-        # Plan par défaut pour illustration
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        
-        # Dessiner un entrepôt exemple
-        entrepot = Rectangle((0, 0), 50, 30, linewidth=3, edgecolor='black', facecolor='none')
-        ax.add_patch(entrepot)
-        
-        # Allées
-        ax.add_patch(Rectangle((23.5, 0), 3, 30, facecolor='lightgray', alpha=0.5))
-        ax.add_patch(Rectangle((0, 13.5), 50, 3, facecolor='lightgray', alpha=0.5))
-        
-        # Rayonnages simplifiés
-        for i in range(3):
-            ax.add_patch(Rectangle((2 + i*8, 2), 1.5, 10, facecolor='skyblue', alpha=0.8))
-            ax.add_patch(Rectangle((2 + i*8, 18), 1.5, 10, facecolor='steelblue', alpha=0.8))
-        
-        ax.set_xlim(-2, 52)
-        ax.set_ylim(-2, 32)
-        ax.set_aspect('equal')
-        ax.set_xlabel('Longueur (m)')
-        ax.set_ylabel('Largeur (m)')
-        ax.set_title('Exemple de plan 2D (avec paramètres par défaut)')
-        ax.grid(True, alpha=0.3)
-        
-        st.pyplot(fig)
-        st.caption("Plan illustratif - Utilisez les paramètres pour générer votre plan personnalisé")
+        st.info("Configurez les paramètres et lancez le calcul pour générer un plan professionnel")
 
 # Pied de page
 st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: gray; padding: 1rem;'>
-        <p>📐 Dimensionnement automatique d'entrepôt - Version 2.0</p>
-        <p>Prend en compte les allées, types de transport et disposition optimale des rayonnages</p>
+        <p>📐 Dimensionnement automatique d'entrepôt - Version Professionnelle</p>
+        <p>Plan 2D structuré avec allées, rayonnages et emplacements de palettes</p>
     </div>
     """,
     unsafe_allow_html=True
