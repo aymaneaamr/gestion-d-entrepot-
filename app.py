@@ -68,9 +68,38 @@ st.markdown("""
 st.markdown('<h1 class="main-header">📐 DIMENSIONNEMENT PROFESSIONNEL D\'ENTREPÔT</h1>', 
             unsafe_allow_html=True)
 
-# Initialisation des paramètres
+# Initialisation des paramètres dans session state
 if 'params' not in st.session_state:
-    st.session_state.params = {}
+    st.session_state.params = {
+        'longueur': 50.0,
+        'largeur': 30.0,
+        'hauteur_sous_poutre': 9.21,
+        'espace_securite': 1.0,
+        'hauteur_sprinklers': 0.5,
+        'pal_longueur': 800,
+        'pal_largeur': 1200,
+        'hauteur_charge': 1500,
+        'poids_charge': 1000,
+        'marge_securite': 100,
+        'type_rayonnage': 'Classique (pallet rack)',
+        'profondeur_standard': 1100,
+        'entretoise_jumelage': 200,
+        'configuration': 'Double face (dos-à-dos)',
+        'nb_palettes_par_travee': 3,
+        'nb_niveaux': 4,
+        'type_chariot': 'Chariot à mât rétractable (reach truck)',
+        'largeur_allee': 2.9,
+        'frequence_transversale': 15,
+        'largeur_transversale': 3.5,
+        'zone_reception': 20,
+        'zone_preparation': 15,
+        'zone_qualite': 5,
+        'zone_bureaux': 5,
+        'type_gestion': 'FIFO (First In First Out)',
+        'taux_occupation': 85,
+        'coeff_utilisation': 0.85,
+        'mode_calcul': 'Équilibré'
+    }
 
 # Sidebar pour les paramètres d'entrée
 st.sidebar.image("https://via.placeholder.com/300x150/667eea/ffffff?text=ENTREPOT+PRO", use_column_width=True)
@@ -86,15 +115,20 @@ param_tab = st.sidebar.radio(
 if param_tab == "🏢 Dimensions":
     st.sidebar.subheader("🏢 Dimensions du bâtiment")
     
-    longueur = st.sidebar.number_input("Longueur totale (m)", min_value=10.0, max_value=200.0, value=50.0, step=1.0)
-    largeur = st.sidebar.number_input("Largeur totale (m)", min_value=10.0, max_value=100.0, value=30.0, step=1.0)
-    hauteur_sous_poutre = st.sidebar.number_input("Hauteur sous poutre (m)", min_value=4.0, max_value=20.0, value=9.21, step=0.5)
+    longueur = st.sidebar.number_input("Longueur totale (m)", min_value=10.0, max_value=200.0, 
+                                       value=st.session_state.params['longueur'], step=1.0)
+    largeur = st.sidebar.number_input("Largeur totale (m)", min_value=10.0, max_value=100.0, 
+                                     value=st.session_state.params['largeur'], step=1.0)
+    hauteur_sous_poutre = st.sidebar.number_input("Hauteur sous poutre (m)", min_value=4.0, max_value=20.0, 
+                                                  value=st.session_state.params['hauteur_sous_poutre'], step=0.5)
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("📐 Contraintes structurelles")
     
-    espace_securite = st.sidebar.slider("Espace de sécurité périmétrique (m)", 0.5, 2.0, 1.0)
-    hauteur_sprinklers = st.sidebar.number_input("Hauteur sprinklers sous poutre (m)", min_value=0.3, max_value=1.0, value=0.5)
+    espace_securite = st.sidebar.slider("Espace de sécurité périmétrique (m)", 0.5, 2.0, 
+                                        value=st.session_state.params['espace_securite'])
+    hauteur_sprinklers = st.sidebar.number_input("Hauteur sprinklers sous poutre (m)", min_value=0.3, max_value=1.0, 
+                                                 value=st.session_state.params['hauteur_sprinklers'])
     
     # Calcul de la hauteur utile
     hauteur_utile = hauteur_sous_poutre - hauteur_sprinklers
@@ -102,8 +136,10 @@ if param_tab == "🏢 Dimensions":
     # Sauvegarde dans session state
     st.session_state.params['longueur'] = longueur
     st.session_state.params['largeur'] = largeur
+    st.session_state.params['hauteur_sous_poutre'] = hauteur_sous_poutre
     st.session_state.params['hauteur_utile'] = hauteur_utile
     st.session_state.params['espace_securite'] = espace_securite
+    st.session_state.params['hauteur_sprinklers'] = hauteur_sprinklers
     
     st.sidebar.info(f"Hauteur utile de stockage: {hauteur_utile:.2f} m")
 
@@ -114,10 +150,11 @@ elif param_tab == "📦 Unités de Charge":
     type_palette = st.sidebar.selectbox(
         "Type de palette",
         ["Europe (EPAL) 800x1200", "Industrielle 1000x1200", "Américaine 1200x1200", 
-         "Demi-palette 600x800", "Personnalisée"]
+         "Demi-palette 600x800", "Personnalisée"],
+        index=0
     )
     
-    if type_palette == "Européenne (EPAL) 800x1200":
+    if type_palette == "Europe (EPAL) 800x1200":
         pal_longueur = 800
         pal_largeur = 1200
     elif type_palette == "Industrielle 1000x1200":
@@ -139,21 +176,27 @@ elif param_tab == "📦 Unités de Charge":
     # Hauteur et poids
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        hauteur_charge = st.number_input("Hauteur charge (mm)", 500, 2500, 1500)
-        poids_charge = st.number_input("Poids max/UC (kg)", 500, 3000, 1000)
+        hauteur_charge = st.number_input("Hauteur charge (mm)", 500, 2500, 
+                                         value=st.session_state.params['hauteur_charge'])
+        poids_charge = st.number_input("Poids max/UC (kg)", 500, 3000, 
+                                       value=st.session_state.params['poids_charge'])
     with col2:
-        marge_securite = st.number_input("Marge sécurité (mm)", 50, 200, 100)
+        marge_securite = st.number_input("Marge sécurité (mm)", 50, 200, 
+                                         value=st.session_state.params['marge_securite'])
     
     # Calcul de la hauteur totale
-    hauteur_totale_uc = hauteur_charge + marge_securite
+    hauteur_totale_uc = (hauteur_charge + marge_securite) / 1000  # Conversion en m
     
-    st.sidebar.info(f"Hauteur totale UC: {hauteur_totale_uc} mm")
+    st.sidebar.info(f"Hauteur totale UC: {hauteur_totale_uc:.2f} m")
     
     # Sauvegarde
+    st.session_state.params['type_palette'] = type_palette
     st.session_state.params['pal_longueur'] = pal_longueur
     st.session_state.params['pal_largeur'] = pal_largeur
+    st.session_state.params['hauteur_charge'] = hauteur_charge
     st.session_state.params['hauteur_uc'] = hauteur_totale_uc
-    st.session_state.params['poids_uc'] = poids_charge
+    st.session_state.params['poids_charge'] = poids_charge
+    st.session_state.params['marge_securite'] = marge_securite
 
 # ==================== 3. RAYONNAGES ====================
 elif param_tab == "🏗️ Rayonnages":
@@ -161,19 +204,23 @@ elif param_tab == "🏗️ Rayonnages":
     
     type_rayonnage = st.sidebar.selectbox(
         "Type de rayonnage",
-        ["Classique (pallet rack)", "Navette (shuttle)", "Mobile", "Cantilever", "Drive-in"]
+        ["Classique (pallet rack)", "Navette (shuttle)", "Mobile", "Cantilever", "Drive-in"],
+        index=0
     )
     
     # Configuration des profondeurs
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        profondeur_standard = st.number_input("Profondeur standard (mm)", 900, 1500, 1100)
+        profondeur_standard = st.number_input("Profondeur standard (mm)", 900, 1500, 
+                                              value=st.session_state.params['profondeur_standard'])
     with col2:
-        entretoise_jumelage = st.number_input("Entretoise jumelage (mm)", 150, 300, 200)
+        entretoise_jumelage = st.number_input("Entretoise jumelage (mm)", 150, 300, 
+                                               value=st.session_state.params['entretoise_jumelage'])
     
     configuration = st.sidebar.radio(
         "Configuration",
-        ["Simple face (mono-face)", "Double face (dos-à-dos)", "Mixte"]
+        ["Simple face (mono-face)", "Double face (dos-à-dos)", "Mixte"],
+        index=1
     )
     
     if configuration == "Simple face (mono-face)":
@@ -186,36 +233,33 @@ elif param_tab == "🏗️ Rayonnages":
     # Configuration des travées
     st.sidebar.subheader("📊 Configuration des travées")
     
-    nb_palettes_par_travee = st.sidebar.selectbox("Palettes par travée", [2, 3, 4, 5], index=1)
+    nb_palettes_par_travee = st.sidebar.selectbox("Palettes par travée", [2, 3, 4, 5], 
+                                                   index=st.session_state.params['nb_palettes_par_travee']-2)
     
-    # Calcul de la longueur de travée
-    if type_palette in st.session_state.params:
-        pal_largeur = st.session_state.params.get('pal_largeur', 1200)
-    else:
-        pal_largeur = 1200
+    # Récupérer la largeur de palette
+    pal_largeur = st.session_state.params.get('pal_largeur', 1200)
     
     largeur_montant = 100  # mm
-    longueur_travee = (nb_palettes_par_travee * pal_largeur) + ((nb_palettes_par_travee + 1) * largeur_montant/2)
+    longueur_travee = (nb_palettes_par_travee * pal_largeur) / 1000 + ((nb_palettes_par_travee + 1) * largeur_montant/2) / 1000
     
-    st.sidebar.metric("Longueur travée calculée", f"{longueur_travee/1000:.2f} m")
+    st.sidebar.metric("Longueur travée calculée", f"{longueur_travee:.2f} m")
     
     # Nombre de niveaux
-    if 'hauteur_uc' in st.session_state.params:
-        hauteur_uc = st.session_state.params.get('hauteur_uc', 1600)
-        hauteur_utile = st.session_state.params.get('hauteur_utile', 8.5)
-        
-        nb_niveaux_possibles = math.floor((hauteur_utile * 1000) / hauteur_uc)
-        nb_niveaux = st.sidebar.number_input("Nombre de niveaux", 1, 10, min(nb_niveaux_possibles, 4))
-    else:
-        nb_niveaux = st.sidebar.number_input("Nombre de niveaux", 1, 10, 4)
+    hauteur_utile = st.session_state.params.get('hauteur_utile', 8.5)
+    hauteur_uc = st.session_state.params.get('hauteur_uc', 1.6)
+    
+    nb_niveaux_possibles = math.floor(hauteur_utile / hauteur_uc)
+    nb_niveaux = st.sidebar.number_input("Nombre de niveaux", 1, 10, 
+                                         value=min(st.session_state.params['nb_niveaux'], nb_niveaux_possibles))
     
     # Sauvegarde
     st.session_state.params['type_rayonnage'] = type_rayonnage
     st.session_state.params['profondeur_standard'] = profondeur_standard
-    st.session_state.params['profondeur_totale'] = profondeur_totale
+    st.session_state.params['profondeur_totale'] = profondeur_totale / 1000  # Conversion en m
+    st.session_state.params['entretoise_jumelage'] = entretoise_jumelage
     st.session_state.params['configuration'] = configuration
     st.session_state.params['nb_palettes_par_travee'] = nb_palettes_par_travee
-    st.session_state.params['longueur_travee'] = longueur_travee / 1000  # Conversion en m
+    st.session_state.params['longueur_travee'] = longueur_travee
     st.session_state.params['nb_niveaux'] = nb_niveaux
 
 # ==================== 4. ENGINS ====================
@@ -225,7 +269,8 @@ elif param_tab == "🚜 Engins":
     type_chariot = st.sidebar.selectbox(
         "Type de chariot principal",
         ["Chariot à mât rétractable (reach truck)", "Chariot frontal (counterbalance)", 
-         "Tracteur (tugger)", "Transpalette manuel"]
+         "Tracteur (tugger)", "Transpalette manuel"],
+        index=0
     )
     
     if type_chariot == "Chariot à mât rétractable (reach truck)":
@@ -240,8 +285,10 @@ elif param_tab == "🚜 Engins":
     # Allées transversales
     st.sidebar.subheader("🔄 Allées transversales")
     
-    frequence_transversale = st.sidebar.number_input("Fréquence (tous les X travées)", 5, 30, 15)
-    largeur_transversale = st.sidebar.slider("Largeur allée transversale (m)", 3.0, 4.5, 3.5, 0.1)
+    frequence_transversale = st.sidebar.number_input("Fréquence (tous les X travées)", 5, 30, 
+                                                      value=st.session_state.params['frequence_transversale'])
+    largeur_transversale = st.sidebar.slider("Largeur allée transversale (m)", 3.0, 4.5, 
+                                              value=st.session_state.params['largeur_transversale'], step=0.1)
     
     # Sauvegarde
     st.session_state.params['type_chariot'] = type_chariot
@@ -256,10 +303,14 @@ elif param_tab == "📋 Zonage":
     # Pourcentage des zones
     st.sidebar.markdown("**Pourcentage de la surface totale**")
     
-    zone_reception = st.sidebar.slider("Zone réception/expédition (%)", 5, 30, 20)
-    zone_preparation = st.sidebar.slider("Zone préparation commandes (%)", 5, 25, 15)
-    zone_qualite = st.sidebar.slider("Zone contrôle qualité (%)", 2, 10, 5)
-    zone_bureaux = st.sidebar.slider("Zone bureaux/sociaux (%)", 2, 15, 5)
+    zone_reception = st.sidebar.slider("Zone réception/expédition (%)", 5, 30, 
+                                        value=st.session_state.params['zone_reception'])
+    zone_preparation = st.sidebar.slider("Zone préparation commandes (%)", 5, 25, 
+                                          value=st.session_state.params['zone_preparation'])
+    zone_qualite = st.sidebar.slider("Zone contrôle qualité (%)", 2, 10, 
+                                      value=st.session_state.params['zone_qualite'])
+    zone_bureaux = st.sidebar.slider("Zone bureaux/sociaux (%)", 2, 15, 
+                                      value=st.session_state.params['zone_bureaux'])
     
     # Vérification du total
     total_zonage = zone_reception + zone_preparation + zone_qualite + zone_bureaux
@@ -270,7 +321,8 @@ elif param_tab == "📋 Zonage":
     # Type de gestion
     type_gestion = st.sidebar.radio(
         "Type de gestion",
-        ["FIFO (First In First Out)", "LIFO (Last In First Out)", "Mixte"]
+        ["FIFO (First In First Out)", "LIFO (Last In First Out)", "Mixte"],
+        index=0
     )
     
     # Sauvegarde
@@ -284,13 +336,16 @@ elif param_tab == "📋 Zonage":
 elif param_tab == "📊 Calculs":
     st.sidebar.subheader("📊 Paramètres de calcul")
     
-    taux_occupation = st.sidebar.slider("Taux d'occupation cible (%)", 70, 95, 85)
-    coefficient_utilisation = st.sidebar.slider("Coefficient d'utilisation", 0.6, 0.95, 0.85)
+    taux_occupation = st.sidebar.slider("Taux d'occupation cible (%)", 70, 95, 
+                                         value=st.session_state.params['taux_occupation'])
+    coefficient_utilisation = st.sidebar.slider("Coefficient d'utilisation", 0.6, 0.95, 
+                                                 value=st.session_state.params['coeff_utilisation'], step=0.05)
     
     # Mode de calcul
     mode_calcul = st.sidebar.radio(
         "Mode de calcul",
-        ["Optimisation surface", "Optimisation capacité", "Équilibré"]
+        ["Optimisation surface", "Optimisation capacité", "Équilibré"],
+        index=2
     )
     
     st.session_state.params['taux_occupation'] = taux_occupation
@@ -302,7 +357,7 @@ elif param_tab == "📊 Calculs":
 def calculer_dimensionnement_pro(params):
     """Calcule le dimensionnement complet de l'entrepôt"""
     
-    # Extraction des paramètres
+    # Extraction des paramètres avec valeurs par défaut
     longueur = params.get('longueur', 50)
     largeur = params.get('largeur', 30)
     hauteur_utile = params.get('hauteur_utile', 8.5)
@@ -311,10 +366,10 @@ def calculer_dimensionnement_pro(params):
     # Dimensions UC
     pal_longueur = params.get('pal_longueur', 800) / 1000  # en m
     pal_largeur = params.get('pal_largeur', 1200) / 1000  # en m
-    hauteur_uc = params.get('hauteur_uc', 1600) / 1000  # en m
+    hauteur_uc = params.get('hauteur_uc', 1.6)  # déjà en m
     
     # Rayonnages
-    profondeur_totale = params.get('profondeur_totale', 2.4) / 1000  # conversion mm -> m
+    profondeur_totale = params.get('profondeur_totale', 2.4)  # déjà en m
     longueur_travee = params.get('longueur_travee', 2.7)  # déjà en m
     nb_niveaux = params.get('nb_niveaux', 4)
     nb_palettes_par_travee = params.get('nb_palettes_par_travee', 3)
@@ -352,12 +407,12 @@ def calculer_dimensionnement_pro(params):
         espace_restant -= (longueur_travee + largeur_allee)
     
     # Ajout des allées transversales
-    nb_transversales = math.floor(nb_travees_par_rangee / frequence_transversale)
+    nb_transversales = math.floor(nb_travees_par_rangee / frequence_transversale) if frequence_transversale > 0 else 0
     longueur_perdue_transversales = nb_transversales * largeur_transversale
     
     # Ajustement du nombre de travées
     longueur_utile_reelle = nb_travees_par_rangee * longueur_travee + (nb_travees_par_rangee - 1) * largeur_allee
-    if longueur_utile_reelle + longueur_perdue_transversales > longueur_disponible:
+    if longueur_utile_reelle + longueur_perdue_transversales > longueur_disponible and nb_travees_par_rangee > 0:
         nb_travees_par_rangee -= 1
         longueur_utile_reelle = nb_travees_par_rangee * longueur_travee + (nb_travees_par_rangee - 1) * largeur_allee
     
@@ -376,8 +431,8 @@ def calculer_dimensionnement_pro(params):
     capacite_reelle = capacite_theorique * params.get('coeff_utilisation', 0.85)
     
     # Ratios
-    ratio_stockage_surface = (capacite_reelle * pal_longueur * pal_largeur) / surface_totale
-    densite_stockage = (capacite_reelle * (pal_longueur * pal_largeur * hauteur_uc)) / (surface_totale * hauteur_utile)
+    ratio_stockage_surface = (capacite_reelle * pal_longueur * pal_largeur) / surface_totale if surface_totale > 0 else 0
+    densite_stockage = (capacite_reelle * (pal_longueur * pal_largeur * hauteur_uc)) / (surface_totale * hauteur_utile) if surface_totale * hauteur_utile > 0 else 0
     
     return {
         'surface_totale': surface_totale,
@@ -400,7 +455,6 @@ def generer_plan_professionnel(longueur, largeur, params, calculs):
     fig, ax = plt.subplots(1, 1, figsize=(16, 12))
     
     # Configuration du style
-    plt.style.use('seaborn-v0_8-darkgrid')
     ax.set_facecolor('#f8f9fa')
     
     # Dessiner le contour de l'entrepôt
@@ -410,11 +464,10 @@ def generer_plan_professionnel(longueur, largeur, params, calculs):
     ax.add_patch(contour)
     
     # Zones fonctionnelles
-    zone_reception = params.get('zone_reception', 20) / 100
-    zone_preparation = params.get('zone_preparation', 15) / 100
+    zone_reception_pct = params.get('zone_reception', 20) / 100
     
     # Zone réception (en bas)
-    hauteur_zone_reception = largeur * zone_reception
+    hauteur_zone_reception = largeur * zone_reception_pct
     rect_reception = Rectangle((0, 0), longueur, hauteur_zone_reception,
                               facecolor='#ffd700', alpha=0.2, 
                               edgecolor='#b8860b', linewidth=2, 
@@ -434,14 +487,6 @@ def generer_plan_professionnel(longueur, largeur, params, calculs):
     ax.text(longueur/2, largeur - hauteur_zone_reception/2, 'ZONE EXPÉDITION',
             ha='center', va='center', fontsize=12, fontweight='bold',
             color='#228b22', alpha=0.7)
-    
-    # Zone préparation (au centre)
-    rect_preparation = Rectangle((0, hauteur_zone_reception), 
-                                 longueur, largeur - 2*hauteur_zone_reception,
-                                 facecolor='#add8e6', alpha=0.1,
-                                 edgecolor='#4682b4', linewidth=2,
-                                 linestyle='--', zorder=2)
-    ax.add_patch(rect_preparation)
     
     # Espace de sécurité (périmètre)
     espace_securite = params.get('espace_securite', 1.0)
@@ -503,7 +548,7 @@ def generer_plan_professionnel(longueur, largeur, params, calculs):
             y_start = espace_securite + j * (longueur_travee + largeur_allee)
             
             # Vérifier si on n'est pas sur une allée transversale
-            if j % frequence_transversale != 0:
+            if (j+1) % frequence_transversale != 0:
                 rayonnage = Rectangle((x_start, y_start),
                                      profondeur, longueur_travee,
                                      facecolor=couleur, edgecolor='white',
@@ -556,12 +601,11 @@ def generer_plan_professionnel(longueur, largeur, params, calculs):
 
 # ==================== AFFICHAGE PRINCIPAL ====================
 
-# Vérification que tous les paramètres sont définis
-params_complets = all(k in st.session_state.params for k in 
-                      ['longueur', 'largeur', 'hauteur_utile', 'pal_longueur', 
-                       'profondeur_totale', 'longueur_travee', 'largeur_allee'])
+# Bouton de calcul dans la sidebar
+st.sidebar.markdown("---")
+calculer = st.sidebar.button("🚀 LANCER LE DIMENSIONNEMENT", use_container_width=True)
 
-if params_complets and st.sidebar.button("🚀 LANCER LE DIMENSIONNEMENT", use_container_width=True):
+if calculer:
     
     # Calcul du dimensionnement
     calculs = calculer_dimensionnement_pro(st.session_state.params)
@@ -631,7 +675,7 @@ if params_complets and st.sidebar.button("🚀 LANCER LE DIMENSIONNEMENT", use_c
                 st.markdown("**📦 Unités de charge**")
                 st.write(f"- Type palette: {st.session_state.params.get('pal_longueur', 800)}x{st.session_state.params.get('pal_largeur', 1200)} mm")
                 st.write(f"- Hauteur UC: {st.session_state.params.get('hauteur_uc', 1.6):.2f} m")
-                st.write(f"- Poids max: {st.session_state.params.get('poids_uc', 1000)} kg")
+                st.write(f"- Poids max: {st.session_state.params.get('poids_charge', 1000)} kg")
         
         # Conformité normative
         st.markdown("### ✅ CONFORMITÉ NORMATIVE")
@@ -664,24 +708,24 @@ if params_complets and st.sidebar.button("🚀 LANCER LE DIMENSIONNEMENT", use_c
         col_e, col_f = st.columns(2)
         
         with col_e:
-            if st.button("📸 Télécharger PNG (haute résolution)", use_container_width=True):
+            if st.button("📸 Télécharger PNG", use_container_width=True):
                 fig.savefig("plan_entrepot_professionnel.png", dpi=300, bbox_inches='tight')
                 with open("plan_entrepot_professionnel.png", "rb") as file:
                     st.download_button(
-                        "Confirmer téléchargement PNG",
+                        "Confirmer téléchargement",
                         file,
                         "plan_entrepot_professionnel.png",
                         "image/png"
                     )
         
         with col_f:
-            if st.button("📊 Exporter données techniques", use_container_width=True):
+            if st.button("📊 Exporter données", use_container_width=True):
                 data = {
                     'Catégorie': ['Dimensions', 'Dimensions', 'Dimensions', 'Capacité', 'Capacité', 'Circulation'],
                     'Paramètre': ['Longueur', 'Largeur', 'Hauteur', 'Capacité théorique', 'Capacité réelle', 'Largeur allée'],
                     'Valeur': [st.session_state.params['longueur'], 
                               st.session_state.params['largeur'],
-                              st.session_state.params['hauteur_utile'],
+                              st.session_state.params.get('hauteur_utile', 8.5),
                               calculs['capacite_theorique'],
                               calculs['capacite_reelle'],
                               st.session_state.params['largeur_allee']],
@@ -690,7 +734,7 @@ if params_complets and st.sidebar.button("🚀 LANCER LE DIMENSIONNEMENT", use_c
                 df = pd.DataFrame(data)
                 csv = df.to_csv(index=False)
                 st.download_button(
-                    "Confirmer téléchargement CSV",
+                    "Confirmer téléchargement",
                     csv,
                     "dimensionnement_technique.csv",
                     "text/csv"
